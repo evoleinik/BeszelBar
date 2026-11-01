@@ -111,7 +111,7 @@ for y in 0..<lineRep.pixelsHigh { for x in (lineRep.pixelsWide / 2)..<(lineRep.p
         lineShades.insert("\(Int(c.redComponent * 20)),\(Int(c.greenComponent * 20)),\(Int(c.blueComponent * 20))")
     }
 } }
-expect(lineShades.count <= 3, "graph area has \(lineShades.count) colours; lines must be unsmoothed (box, CPU, RAM only)")
+expect(lineShades.count <= 4, "graph area has \(lineShades.count) colours; must be unsmoothed (box, CPU, RAM area and edge only)")
 
 // Proportional: a wide W takes more room than a narrow I.
 expect(PixelFace.medium.length("W") == 5 && PixelFace.medium.length("I") == 3, "proportional widths")
