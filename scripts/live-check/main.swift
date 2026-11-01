@@ -160,6 +160,14 @@ expect(same(pixel(rising, 30, 3), StatusImage.pressureColors[2]), "new columns r
 let noData = StatusImage.make([StatusGraph(label: "", cpu: Array(repeating: 100, count: 60), mem: Array(repeating: 80, count: 60))],
                               work: nil, counts: nil, appearance: NSAppearance(named: .darkAqua)!)
 expect(same(pixel(noData, 30, 3), StatusImage.memAreaColor), "no pressure data draws grey, got \(pixel(noData, 30, 3))")
+// Bars reach the bottom edge with no dark row under them; zero draws nothing; corners stay cut.
+let busyWork = StatusImage.make([], work: Array(repeating: 3, count: 60), counts: nil, appearance: NSAppearance(named: .darkAqua)!)
+let idleWork = StatusImage.make([], work: Array(repeating: 0, count: 60), counts: nil, appearance: NSAppearance(named: .darkAqua)!)
+func purple(_ c: NSColor) -> Bool { c.alphaComponent > 0.9 && c.blueComponent > 0.7 && c.redComponent > 0.35 && c.greenComponent < 0.6 }
+expect(purple(pixel(busyWork, 10, 0)), "work bar must reach the bottom row, got \(pixel(busyWork, 10, 0))")
+expect(!purple(pixel(idleWork, 10, 0)), "zero sessions must draw no bar")
+expect(pixel(busyWork, 0, 0).alphaComponent < 0.1 && pixel(busyWork, 33, 0).alphaComponent < 0.1, "bottom corners stay cut")
+expect(same(pixel(rising, 3, 0), StatusImage.pressureColors[0]), "RAM area reaches the bottom row, got \(pixel(rising, 3, 0))")
 // Out-of-range pressure never traps: huge values clamp to critical, NaN and negatives draw grey.
 expect(StatusImage.memColor(1e300) === StatusImage.pressureColors[2] && StatusImage.memColor(.infinity) === StatusImage.memColor(.nan),
        "out-of-range pressure")

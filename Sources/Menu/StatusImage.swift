@@ -123,6 +123,7 @@ enum StatusImage {
                     pixelBars(graph.mem, in: box, color: memAreaColor, capacity: LiveMetricsService.capacity,
                               levels: graph.pressure)
                     pixelLine(graph.cpu, in: box, color: cpuColor, capacity: LiveMetricsService.capacity)
+                    pixelBox(box, color: nil)  // bars reach the edge, so cut the corners again
                     drawLabel(graph.label, inside: box)
                     x += graphWidth + spacing
                 }
@@ -132,6 +133,7 @@ enum StatusImage {
                     pixelBox(box)
                     drawGrid(top: WorkScale.top(work), in: box)
                     pixelBars(WorkScale.percent(work), in: box, color: workColor, capacity: workCapacity)
+                    pixelBox(box, color: nil)
                     drawLabel("W", inside: box)
                     drawScale("\(WorkScale.summary(work).median)", in: box)
                 }
@@ -208,9 +210,9 @@ enum StatusImage {
         NSGraphicsContext.restoreGraphicsState()
     }
 
-    /// Solid one-point bars from the box bottom, one per column. `floor` is the first row filled.
-    /// With `levels`, each column takes its memory-pressure colour.
-    private static func pixelBars(_ values: [Double], in box: NSRect, color: NSColor, capacity: Int, floor: Int = 1,
+    /// Solid one-point bars from the box's bottom edge up to the value's row, one per column. A
+    /// zero draws nothing. With `levels`, each column takes its memory-pressure colour.
+    private static func pixelBars(_ values: [Double], in box: NSRect, color: NSColor, capacity: Int,
                                   levels: [Double?]? = nil) {
         let cols = columns(values, count: Int(box.width), capacity: capacity)
         let tints = levels.map { columns($0, count: Int(box.width), capacity: capacity) }
@@ -218,12 +220,10 @@ enum StatusImage {
         NSGraphicsContext.current?.shouldAntialias = false
         color.setFill()
         for (col, value) in cols.enumerated() {
-            guard let value else { continue }
+            guard let value, value > 0 else { continue }
             if let tints { memColor(tints[col] ?? nil).setFill() }
-            let top = floor == 0 ? Int((min(max(value, 0), 100) / 100 * Double(box.height)).rounded())
-                                 : row(value, height: Int(box.height))
-            guard top > floor - 1 else { continue }
-            NSRect(x: box.minX + CGFloat(col), y: box.minY + CGFloat(floor), width: 1, height: CGFloat(top - floor + 1)).fill()
+            let top = row(value, height: Int(box.height))
+            NSRect(x: box.minX + CGFloat(col), y: box.minY, width: 1, height: CGFloat(top + 1)).fill()
         }
         NSGraphicsContext.restoreGraphicsState()
     }
