@@ -21,6 +21,17 @@ enum MenuBuilder {
             menu.addItem(NSMenuItem.separator())
         }
 
+        let agentSystems = appState.selectedInstanceSystems.filter { appState.agentStats[$0.id] != nil }
+        for system in agentSystems {
+            guard let stats = appState.agentStats[system.id] else { continue }
+            let item = NSMenuItem()
+            let view = NSHostingView(rootView: AgentsMenuView(systemName: system.name, stats: stats))
+            view.frame = NSRect(x: 0, y: 0, width: menuWidth, height: AgentsMenuView.height(for: stats))
+            item.view = view
+            menu.addItem(item)
+            menu.addItem(NSMenuItem.separator())
+        }
+
         if appState.instances.isEmpty {
             menu.addItem(createInfoItem("No Hub Configured", subtext: "Open Settings to add a hub"))
         } else if appState.isLoading {

@@ -229,6 +229,30 @@ final class BeszelAPIService: @unchecked Sendable {
         }
     }
 
+    /// Latest one-minute custom metrics row for a system, or nil when the hub has none
+    /// (hubs without custom metrics answer 404 for the collection).
+    func fetchLatestCustomStats(systemID: String) async throws -> CustomStatsRecord? {
+        guard var components = URLComponents(string: instance.url) else {
+            throw URLError(.badURL)
+        }
+        components.path = "/api/collections/custom_stats/records"
+        components.queryItems = [
+            URLQueryItem(name: "perPage", value: "1"),
+            URLQueryItem(name: "sort", value: "-created"),
+            URLQueryItem(name: "filter", value: "system = '\(systemID)' && type = '1m'")
+        ]
+        guard let url = components.url else { throw URLError(.badURL) }
+        do {
+            let response: PocketBaseListResponse<CustomStatsRecord> = try await performRequest(with: url)
+            return response.items.first
+        } catch let error as BeszelAPIError {
+            if case .httpError(let statusCode, _) = error, statusCode == 404 || statusCode == 400 {
+                return nil
+            }
+            throw error
+        }
+    }
+
     private func fetchAllPages<T: Codable>(path: String, filter: String?) async throws -> [T] {
         var allItems: [T] = []
         var currentPage = 1

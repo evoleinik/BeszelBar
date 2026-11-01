@@ -40,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         _ = AppState.shared.activeAlerts
                         _ = AppState.shared.systemDetails
                         _ = AppState.shared.containers
+                        _ = AppState.shared.agentStats
                     } onChange: {
                         continuation.resume()
                     }
@@ -54,14 +55,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if let button = statusItem?.button {
             let alertCount = appState.activeAlerts.count
-            if alertCount > 0 {
-                button.image = NSImage(systemSymbolName: "server.rack.fill", accessibilityDescription: "BeszelBar")
-                button.title = " \(alertCount)"
-            } else {
-                button.image = NSImage(systemSymbolName: "server.rack", accessibilityDescription: "BeszelBar")
-                button.title = ""
-            }
+            let waiting = appState.waitingTotal
+            button.image = NSImage(systemSymbolName: alertCount > 0 ? "server.rack.fill" : "server.rack",
+                                   accessibilityDescription: "BeszelBar")
             button.image?.size = NSSize(width: 18, height: 18)
+            button.attributedTitle = StatusTitle.make(alerts: alertCount, waiting: waiting)
+            button.toolTip = waiting > 0
+                ? "\(waiting) agent session\(waiting == 1 ? "" : "s") waiting for you"
+                : nil
         }
 
         statusItem?.menu = MenuBuilder.build(appState: appState)

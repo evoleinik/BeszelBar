@@ -12,6 +12,9 @@ final class AppState {
     var systemDetails: [String: SystemDetailsRecord] = [:]
     var containers: [String: [ContainerRecord]] = [:]
     var activeAlerts: [AlertRecord] = []
+    var agentStats: [String: AgentStats] = [:]
+
+    var waitingTotal: Int { agentStats.values.reduce(0) { $0 + $1.waiting } }
     var isLoading = false
     var errorMessage: String?
     var isConfigured = false
@@ -23,6 +26,7 @@ final class AppState {
     private var detailsTask: Task<Void, Never>?
     private var alertTask: Task<Void, Never>?
     private var containerTask: Task<Void, Never>?
+    private var agentTask: Task<Void, Never>?
 
     private init() {
         loadInstances()
@@ -50,6 +54,7 @@ final class AppState {
                 let systems = try await service.fetchSystems()
                 guard !Task.isCancelled else { return }
                 selectedInstanceSystems = systems.sorted { $0.name < $1.name }
+                loadAgentStats()
             } catch is CancellationError {
                 return
             } catch {
@@ -123,12 +128,32 @@ final class AppState {
         }
     }
 
+    func loadAgentStats() {
+        guard let instance = selectedInstance else { return }
+        let systemIDs = selectedInstanceSystems.map(\.id)
+        agentTask?.cancel()
+        agentTask = Task {
+            let service = getOrCreateService(for: instance)
+            var mapped: [String: AgentStats] = [:]
+            for id in systemIDs {
+                guard !Task.isCancelled else { return }
+                if let record = try? await service.fetchLatestCustomStats(systemID: id),
+                   let stats = AgentStats.parse(record.stats) {
+                    mapped[id] = stats
+                }
+            }
+            guard !Task.isCancelled else { return }
+            if mapped != agentStats { agentStats = mapped }
+        }
+    }
+
     func selectInstance(_ instance: Instance?) {
         selectedInstance = instance
         selectedInstanceSystems = []
         systemDetails = [:]
         containers = [:]
         activeAlerts = []
+        agentStats = [:]
         loadSystems()
         loadSystemDetails()
         loadAlerts()
@@ -162,6 +187,7 @@ final class AppState {
             systemDetails = [:]
             containers = [:]
             activeAlerts = []
+            agentStats = [:]
             if selectedInstance != nil {
                 loadSystems()
                 loadSystemDetails()
