@@ -58,7 +58,8 @@ enum StatusImage {
     static let letterFont = NSFont.systemFont(ofSize: 9, weight: .semibold)
     static let workCapacity = 60  // one point per minute: the last hour
     static let cpuColor = NSColor(srgbRed: 0x6C / 255, green: 0xD4 / 255, blue: 0xFF / 255, alpha: 1)    // bright cyan line
-    static let memAreaColor = NSColor(srgbRed: 0x4A / 255, green: 0x4A / 255, blue: 0x4A / 255, alpha: 1) // grey level
+    static let memAreaColor = NSColor(srgbRed: 0x6E / 255, green: 0x6E / 255, blue: 0x6E / 255, alpha: 1) // grey level
+    static let boxColor = NSColor(white: 0.16, alpha: 1)
 
     static func width(for count: Int) -> CGFloat {
         guard count > 0 else { return 0 }
@@ -163,7 +164,7 @@ enum StatusImage {
 
     /// The graph background: a box with its four corner pixels cut, drawn without smoothing.
     /// With a nil colour it only cuts the corners.
-    private static func pixelBox(_ box: NSRect, color: NSColor? = NSColor(white: 0.16, alpha: 1)) {
+    private static func pixelBox(_ box: NSRect, color: NSColor? = boxColor) {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current?.shouldAntialias = false
         if let color {

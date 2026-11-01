@@ -115,6 +115,12 @@ for y in 0..<lineRep.pixelsHigh { for x in (lineRep.pixelsWide / 2)..<(lineRep.p
     }
 } }
 expect(lineShades.count <= 3, "graph area has \(lineShades.count) colours; must be unsmoothed (box, CPU, RAM area only)")
+// Readable on the pixel grid: the RAM area stands clear of the box, and the CPU line clear of RAM.
+func brightness(_ c: NSColor) -> CGFloat { c.usingColorSpace(.deviceRGB)!.brightnessComponent }
+expect(brightness(StatusImage.memAreaColor) - brightness(StatusImage.boxColor) >= 0.2,
+       "RAM area too close to the box background (\(brightness(StatusImage.memAreaColor)) vs \(brightness(StatusImage.boxColor)))")
+expect(brightness(StatusImage.cpuColor) - brightness(StatusImage.memAreaColor) >= 0.4,
+       "CPU line too close to the RAM area (\(brightness(StatusImage.cpuColor)) vs \(brightness(StatusImage.memAreaColor)))")
 
 // Proportional: a wide W takes more room than a narrow I.
 expect(PixelFace.medium.length("W") == 5 && PixelFace.medium.length("I") == 3, "proportional widths")
