@@ -73,7 +73,7 @@ enum StatusImage {
     static let workColor = NSColor(srgbRed: 0.50, green: 0.47, blue: 0.87, alpha: 1)
     static let bigFont = NSFont.monospacedDigitSystemFont(ofSize: 14, weight: .semibold)
     static let letterFont = NSFont.systemFont(ofSize: 9, weight: .semibold)
-    static let cpuColor = NSColor(white: 0.96, alpha: 1)  // white line, clear on every pressure colour
+    static let cpuColor = NSColor(srgbRed: 0x6C / 255, green: 0xD4 / 255, blue: 0xFF / 255, alpha: 1)  // cyan line
     static let memAreaColor = NSColor(srgbRed: 0x6E / 255, green: 0x6E / 255, blue: 0x6E / 255, alpha: 1) // no pressure data
     /// The RAM area's colour by memory pressure, as Activity Monitor does: normal, warning, critical.
     static let pressureColors = [NSColor(srgbRed: 0x1F / 255, green: 0x7A / 255, blue: 0x3A / 255, alpha: 1),
