@@ -114,7 +114,6 @@ enum StatusImage {
                     switch memStyle {
                     case .area:
                         pixelBars(graph.mem, in: box, color: memColor.withAlphaComponent(0.38), capacity: LiveMetricsService.capacity)
-                        pixelTops(graph.mem, in: box, color: memColor, capacity: LiveMetricsService.capacity)
                         pixelLine(graph.cpu, in: box, color: cpuColor, capacity: LiveMetricsService.capacity)
                     case .line:
                         pixelLine(graph.mem, in: box, color: memColor, capacity: LiveMetricsService.capacity)
@@ -203,19 +202,6 @@ enum StatusImage {
         NSGraphicsContext.restoreGraphicsState()
     }
 
-    /// Just the top pixel of each column: the bright edge of an area.
-    private static func pixelTops(_ values: [Double], in box: NSRect, color: NSColor, capacity: Int) {
-        let cols = columns(values, count: Int(box.width), capacity: capacity)
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current?.shouldAntialias = false
-        color.setFill()
-        for (col, value) in cols.enumerated() {
-            guard let value else { continue }
-            NSRect(x: box.minX + CGFloat(col), y: box.minY + CGFloat(row(value, height: Int(box.height))), width: 1, height: 1).fill()
-        }
-        NSGraphicsContext.restoreGraphicsState()
-    }
-
     /// Solid one-point bars from the box bottom, one per column.
     private static func pixelBars(_ values: [Double], in box: NSRect, color: NSColor, capacity: Int) {
         let cols = columns(values, count: Int(box.width), capacity: capacity)
@@ -288,8 +274,8 @@ enum StatusImage {
         ])
     }
 
-    /// How RAM is drawn: a line like CPU, or a level, a dim area with a bright top edge, under the
-    /// CPU line. The area keeps RAM readable where the two would cross.
+    /// How RAM is drawn: a line like CPU, or a level, a plain dim area under the CPU line, so the
+    /// graph has one line and RAM stays readable where the two would cross.
     enum MemStyle { case line, area }
     static var memStyle: MemStyle = .area
 
