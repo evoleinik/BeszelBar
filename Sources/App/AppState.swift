@@ -55,6 +55,7 @@ final class AppState {
                 guard !Task.isCancelled else { return }
                 selectedInstanceSystems = systems.sorted { $0.name < $1.name }
                 loadAgentStats()
+                startLiveMetrics()
             } catch is CancellationError {
                 return
             } catch {
@@ -128,6 +129,18 @@ final class AppState {
         }
     }
 
+    func startLiveMetrics() {
+        guard let instance = selectedInstance else {
+            LiveMetricsService.shared.stop()
+            return
+        }
+        let ids = selectedInstanceSystems.filter { $0.status == "up" }.map(\.id)
+        let service = getOrCreateService(for: instance)
+        LiveMetricsService.shared.configure(baseURL: instance.url, systemIDs: ids) { refresh in
+            try await service.validToken(refresh: refresh)
+        }
+    }
+
     func loadAgentStats() {
         guard let instance = selectedInstance else { return }
         let systemIDs = selectedInstanceSystems.map(\.id)
@@ -154,6 +167,7 @@ final class AppState {
         containers = [:]
         activeAlerts = []
         agentStats = [:]
+        LiveMetricsService.shared.stop()
         loadSystems()
         loadSystemDetails()
         loadAlerts()
@@ -188,6 +202,7 @@ final class AppState {
             containers = [:]
             activeAlerts = []
             agentStats = [:]
+            LiveMetricsService.shared.stop()
             if selectedInstance != nil {
                 loadSystems()
                 loadSystemDetails()

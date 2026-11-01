@@ -38,6 +38,16 @@ final class BeszelAPIService: @unchecked Sendable {
         }
     }
 
+    /// A token for calls this service does not make itself, such as the realtime subscription.
+    func validToken(refresh: Bool = false) async throws -> String {
+        if refresh {
+            lock.lock()
+            authToken = nil
+            lock.unlock()
+        }
+        return try await getValidToken()
+    }
+
     private func isJWT(_ str: String) -> Bool {
         let parts = str.components(separatedBy: ".")
         return parts.count == 3 && str.hasPrefix("ey")

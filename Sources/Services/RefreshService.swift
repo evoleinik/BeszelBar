@@ -46,6 +46,7 @@ final class RefreshService {
 
     private func refresh() {
         AppState.shared.loadSystems()
+        AppState.shared.loadSystemDetails()
         AppState.shared.loadAlerts()
         AppState.shared.loadContainers()
     }
