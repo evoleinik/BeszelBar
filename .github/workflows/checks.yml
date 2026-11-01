@@ -1,0 +1,16 @@
+name: Checks
+on:
+  push:
+    branches: [agents]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Live graphs, pixel drawing, pressure, work steps
+        run: scripts/check-live.sh
+      - name: Agent metric parser
+        run: scripts/check-agent-stats.sh
