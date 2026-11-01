@@ -151,14 +151,14 @@ final class AppState {
         LiveMetricsService.shared.configure(baseURL: instance.url, systemIDs: ids) { refresh in
             try await service.validToken(refresh: refresh)
         }
-        // Fill each new graph from the hub's last three one-minute rows, so it never starts empty.
+        // Fill each new graph from the hub's last one-minute rows, so it never starts empty.
         let missing = LiveMetricsService.shared.unseeded(ids)
         guard !missing.isEmpty else { return }
         Task {
             for id in missing {
-                guard let rows = try? await service.fetchSystemStats(systemID: id, limit: 3, type: "1m"),
+                guard let rows = try? await service.fetchSystemStats(systemID: id, limit: LiveMetricsService.seedMinutes, type: "1m"),
                       !rows.isEmpty else { continue }
-                let custom = (try? await service.fetchCustomStatsHistory(systemID: id, limit: 3)) ?? []
+                let custom = (try? await service.fetchCustomStatsHistory(systemID: id, limit: LiveMetricsService.seedMinutes)) ?? []
                 var pressure: [String: Double] = [:]
                 for row in custom {
                     if let level = row.stats[LivePoint.pressureKey] { pressure[String((row.created ?? "").prefix(16))] = level }

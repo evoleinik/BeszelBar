@@ -71,14 +71,19 @@ for (t, cpu) in [(0.0, 10.0), (1, 20), (2, 30), (3, 40), (4, 50), (5, 60), (6, 7
     if let p = bucket.add(LivePoint(cpu: cpu, mem: 50), at: t) { averaged.append(p) }
 }
 expect(averaged == [LivePoint(cpu: 35, mem: 50)], "averaged \(averaged)")
-// Start-up fill: the hub's minutes, oldest first, each as 12 five-second points, ahead of live ones.
+// Start-up fill: the hub's minutes, oldest first, each as one minute of points, ahead of live ones.
 let minutes = LivePoint.fromMinutes([("2026-11-01 08:52:45.6Z", 30, 80), ("2026-11-01 08:51:45.6Z", 20, 70)],
                                     pressure: ["2026-11-01 08:52": 1])
 expect(minutes == [LivePoint(cpu: 20, mem: 70), LivePoint(cpu: 30, mem: 80, pressure: 1)], "minutes \(minutes)")
 let liveTail = [LivePoint(cpu: 99, mem: 1)]
 let seededGraph = LiveMetricsService.merged(minutes: minutes, live: liveTail)
-expect(seededGraph.count == 25 && seededGraph.first == minutes[0] && seededGraph[12] == minutes[1] && seededGraph.last == liveTail[0],
-       "merged \(seededGraph.count)")
+let per = LiveMetricsService.perMinute
+expect(seededGraph.count == 2 * per + 1 && seededGraph.first == minutes[0] && seededGraph[per] == minutes[1]
+       && seededGraph.last == liveTail[0], "merged \(seededGraph.count)")
+// The live graph spans Stats' 5 minutes, within one point, and the start-up fill covers all of it.
+let span = Double(LiveMetricsService.capacity) * LiveMetricsService.window
+expect(abs(span - 300) <= LiveMetricsService.window, "graph spans \(span) s, not 5 minutes")
+expect(LiveMetricsService.seedMinutes * per >= LiveMetricsService.capacity, "start-up fill leaves a gap")
 expect(LiveMetricsService.merged(minutes: Array(repeating: minutes[0], count: 5), live: Array(repeating: liveTail[0], count: 10)).count
        == LiveMetricsService.capacity, "merged keeps at most capacity")
 // Pressure keeps the window's worst level, so a short spike still shows.

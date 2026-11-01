@@ -104,15 +104,19 @@ enum RealtimeTopic {
 }
 
 /// Keeps one graph's worth of CPU and memory per system from Beszel's realtime feed: one point
-/// per five seconds and per graph column, each the average of that window's one-second readings,
-/// so 34 points cover just under 3 minutes. While it runs, the hub asks those agents for numbers
+/// per nine seconds and per graph column, each the average of that window's one-second readings,
+/// so 34 points cover 5 minutes 6 seconds, the 5 minutes Stats shows by default. While it runs, the hub asks those agents for numbers
 /// every second. On start, the hub's last one-minute rows fill the graph, so it is never empty;
 /// live points push them out.
 @MainActor
 final class LiveMetricsService {
     static let shared = LiveMetricsService()
     nonisolated static let capacity = Int(StatusImage.graphWidth)
-    nonisolated static let window = 5.0
+    nonisolated static let window = 9.0
+    /// Points a one-minute row from the hub becomes when it fills the graph on start.
+    nonisolated static let perMinute = Int((60 / window).rounded())
+    /// One-minute rows needed to fill the graph.
+    nonisolated static let seedMinutes = (capacity + perMinute - 1) / perMinute
 
     private var buckets: [String: ReadingBucket] = [:]
     private var seeded: Set<String> = []
@@ -186,7 +190,6 @@ final class LiveMetricsService {
     /// Each minute becomes one point per window, older than every live point; the newest
     /// `capacity` points are kept.
     nonisolated static func merged(minutes: [LivePoint], live: [LivePoint]) -> [LivePoint] {
-        let perMinute = Int(60 / window)
         let filled = minutes.flatMap { Array(repeating: $0, count: perMinute) }
         return Array((filled + live).suffix(capacity))
     }
