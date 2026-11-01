@@ -34,7 +34,15 @@ expect(pts.count == 3, "count")
 expect(abs(pts[2].x - 40) < 0.001 && abs(pts[0].x - (40 - 2 * step)) < 0.001, "x \(pts.map(\.x))")
 expect(pts[1].y == 15 && pts[2].y == 1, "clamp \(pts.map(\.y))")
 expect(Sparkline.points(Array(repeating: 5, count: 90), width: 40, height: 16, capacity: 60).count == 60, "capacity")
-expect(StatusImage.width(for: 2) == 2 * (16 + 3 + 40) + 6, "width")
+expect(StatusImage.width(for: 2) == 2 * (9 + 2 + 28) + 5, "width \(StatusImage.width(for: 2))")
+
+// Averaging: one point per 5-second window, the mean of its readings.
+var bucket = ReadingBucket(window: 5)
+var averaged: [LivePoint] = []
+for (t, cpu) in [(0.0, 10.0), (1, 20), (2, 30), (3, 40), (4, 50), (5, 60), (6, 70)] {
+    if let p = bucket.add(LivePoint(cpu: cpu, mem: 50), at: t) { averaged.append(p) }
+}
+expect(averaged == [LivePoint(cpu: 35, mem: 50)], "averaged \(averaged)")
 
 if failures == 0 { print("ok") }
 exit(failures == 0 ? 0 : 1)

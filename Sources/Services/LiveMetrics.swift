@@ -21,6 +21,32 @@ struct LivePoint: Equatable {
     }
 }
 
+/// Averages one-second readings into one point per window, so the graph moves calmly.
+struct ReadingBucket {
+    let window: Double
+    private var start: Double?
+    private var cpu = 0.0
+    private var mem = 0.0
+    private var count = 0
+
+    init(window: Double) { self.window = window }
+
+    /// Adds a reading taken at `time` (seconds). Returns the window's average once the window has passed.
+    mutating func add(_ point: LivePoint, at time: Double) -> LivePoint? {
+        if start == nil { start = time }
+        cpu += point.cpu
+        mem += point.mem
+        count += 1
+        guard let begun = start, time - begun >= window else { return nil }
+        let average = LivePoint(cpu: cpu / Double(count), mem: mem / Double(count))
+        start = nil
+        cpu = 0
+        mem = 0
+        count = 0
+        return average
+    }
+}
+
 /// Splits a text/event-stream into events. Feed it one line at a time, without the line break.
 struct SSEParser {
     struct Event: Equatable {
@@ -59,12 +85,16 @@ enum RealtimeTopic {
     }
 }
 
-/// Keeps a one-minute history of live CPU and memory readings per system, from Beszel's realtime feed.
-/// While it runs, the hub asks those agents for numbers every second.
+/// Keeps five minutes of CPU and memory per system from Beszel's realtime feed: one point per
+/// five seconds, each the average of that window's one-second readings. While it runs, the hub
+/// asks those agents for numbers every second.
 @MainActor
 final class LiveMetricsService {
     static let shared = LiveMetricsService()
     nonisolated static let capacity = 60
+    nonisolated static let window = 5.0
+
+    private var buckets: [String: ReadingBucket] = [:]
 
     private(set) var history: [String: [LivePoint]] = [:]
     var onUpdate: (() -> Void)?
@@ -87,6 +117,7 @@ final class LiveMetricsService {
         configKey = key
         task?.cancel()
         history = history.filter { systemIDs.contains($0.key) }
+        buckets = buckets.filter { systemIDs.contains($0.key) }
         guard !systemIDs.isEmpty else {
             task = nil
             return
@@ -114,10 +145,15 @@ final class LiveMetricsService {
         task = nil
         configKey = ""
         history = [:]
+        buckets = [:]
         onUpdate?()
     }
 
-    private func append(_ point: LivePoint, for systemID: String) {
+    private func append(_ reading: LivePoint, for systemID: String) {
+        var bucket = buckets[systemID] ?? ReadingBucket(window: Self.window)
+        let averaged = bucket.add(reading, at: Date().timeIntervalSince1970)
+        buckets[systemID] = bucket
+        guard let point = averaged else { return }
         var points = history[systemID] ?? []
         points.append(point)
         if points.count > Self.capacity { points.removeFirst(points.count - Self.capacity) }

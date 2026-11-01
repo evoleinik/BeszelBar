@@ -73,8 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .sorted { (isMac($0, appState) ? 1 : 0, $0.name) < (isMac($1, appState) ? 1 : 0, $1.name) }
         let graphs = systems.map { system -> StatusGraph in
             let points = live[system.id] ?? []
-            return StatusGraph(symbol: isMac(system, appState) ? "laptopcomputer" : "server.rack",
-                               cpu: points.map(\.cpu), mem: points.map(\.mem))
+            return StatusGraph(label: system.name.lowercased(), cpu: points.map(\.cpu), mem: points.map(\.mem))
         }
         if graphs.isEmpty {
             button.image = NSImage(systemSymbolName: alertCount > 0 ? "server.rack.fill" : "server.rack",

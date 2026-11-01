@@ -15,24 +15,27 @@ enum Sparkline {
     }
 }
 
-/// One machine in the menu bar item: its symbol and its recent CPU and memory readings.
+/// One machine in the menu bar item: its name and its recent CPU and memory readings.
 struct StatusGraph: Equatable {
-    let symbol: String
+    let label: String
     let cpu: [Double]
     let mem: [Double]
 }
 
-/// Draws the menu bar item: for each machine, its symbol and a small graph with CPU and memory lines.
+/// Draws the menu bar item: for each machine, its name turned like a book spine (reading top to
+/// bottom, as on English books) and a small graph with CPU and memory lines.
 enum StatusImage {
     static let height: CGFloat = 16
-    static let graphWidth: CGFloat = 40
-    static let symbolWidth: CGFloat = 16
+    static let graphWidth: CGFloat = 28
+    static let labelWidth: CGFloat = 9
+    static let gap: CGFloat = 2
+    static let spacing: CGFloat = 5
     static let cpuColor = NSColor(srgbRed: 0.52, green: 0.72, blue: 0.92, alpha: 1)
     static let memColor = NSColor(srgbRed: 0.59, green: 0.77, blue: 0.35, alpha: 1)
 
     static func width(for count: Int) -> CGFloat {
         guard count > 0 else { return 0 }
-        return CGFloat(count) * (symbolWidth + 3 + graphWidth) + CGFloat(count - 1) * 6
+        return CGFloat(count) * (labelWidth + gap + graphWidth) + CGFloat(count - 1) * spacing
     }
 
     static func make(_ graphs: [StatusGraph], appearance: NSAppearance) -> NSImage {
@@ -40,13 +43,13 @@ enum StatusImage {
             appearance.performAsCurrentDrawingAppearance {
                 var x: CGFloat = 0
                 for graph in graphs {
-                    drawSymbol(graph.symbol, in: NSRect(x: x, y: 0, width: symbolWidth, height: height))
-                    let box = NSRect(x: x + symbolWidth + 3, y: 0, width: graphWidth, height: height)
+                    drawLabel(graph.label, in: NSRect(x: x, y: 0, width: labelWidth, height: height))
+                    let box = NSRect(x: x + labelWidth + gap, y: 0, width: graphWidth, height: height)
                     NSColor(white: 0.16, alpha: 1).setFill()
                     NSBezierPath(roundedRect: box, xRadius: 2, yRadius: 2).fill()
                     stroke(graph.mem, in: box, color: memColor)
                     stroke(graph.cpu, in: box, color: cpuColor)
-                    x += symbolWidth + 3 + graphWidth + 6
+                    x += labelWidth + gap + graphWidth + spacing
                 }
             }
             return true
@@ -69,17 +72,25 @@ enum StatusImage {
         path.stroke()
     }
 
-    private static func drawSymbol(_ name: String, in rect: NSRect) {
-        guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 12, weight: .regular)) else { return }
-        let size = symbol.size
-        let tinted = NSImage(size: size, flipped: false) { bounds in
-            symbol.draw(in: bounds)
-            NSColor.labelColor.set()
-            bounds.fill(using: .sourceAtop)
-            return true
-        }
-        tinted.draw(in: NSRect(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2,
-                               width: size.width, height: size.height))
+    /// The name rotated a quarter turn clockwise, centred in `rect`, shrunk to fit its height.
+    private static func drawLabel(_ text: String, in rect: NSRect) {
+        guard !text.isEmpty else { return }
+        var fontSize: CGFloat = 7.5
+        var string: NSAttributedString
+        repeat {
+            string = NSAttributedString(string: text, attributes: [
+                .font: NSFont.systemFont(ofSize: fontSize, weight: .medium),
+                .foregroundColor: NSColor.labelColor,
+            ])
+            fontSize -= 0.5
+        } while string.size().width > rect.height && fontSize >= 4
+        let size = string.size()
+        NSGraphicsContext.saveGraphicsState()
+        let transform = NSAffineTransform()
+        transform.translateX(by: rect.midX, yBy: rect.midY)
+        transform.rotate(byDegrees: -90)
+        transform.concat()
+        string.draw(at: NSPoint(x: -size.width / 2, y: -size.height / 2))
+        NSGraphicsContext.restoreGraphicsState()
     }
 }
