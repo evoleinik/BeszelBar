@@ -124,9 +124,8 @@ enum StatusImage {
                     NSBezierPath(roundedRect: box, xRadius: 2, yRadius: 2).fill()
                     drawGrid(top: WorkScale.top(work), in: box)
                     fillArea(WorkScale.percent(work), in: box, color: workColor)
-                    drawLabel("work", inside: box)
-                    PixelFont.draw(PixelFont.cornerPoints("\(WorkScale.top(work))", right: box.maxX - 2, top: box.maxY - 1),
-                                   light: labelLight, outline: labelDark)
+                    drawLabel("W", inside: box)
+                    drawScale("\(WorkScale.top(work))", in: box)
                 }
                 if let counts {
                     var cx = countsX
@@ -203,14 +202,41 @@ enum StatusImage {
         ])
     }
 
+    enum LabelStyle { case sidewaysPixel, uprightPixel, uprightText }
+    static var labelStyle: LabelStyle = .uprightPixel
+
     static let labelLight = NSColor(white: 0.95, alpha: 1)
     static let labelDark = NSColor(white: 0.16, alpha: 1)
 
     /// The name in the 3×5 pixel font, reading bottom to top along the graph's inside left edge,
     /// over the lines. The letter tops sit `labelInset` points inside the edge.
     private static func drawLabel(_ text: String, inside box: NSRect) {
-        let points = PixelFont.verticalPoints(text, left: box.minX, midY: box.midY, height: box.height,
-                                              inset: Int(labelInset))
-        PixelFont.draw(points, light: labelLight, outline: labelDark)
+        switch labelStyle {
+        case .sidewaysPixel:
+            let points = PixelFont.verticalPoints(text, left: box.minX, midY: box.midY, height: box.height,
+                                                  inset: Int(labelInset))
+            PixelFont.draw(points, light: labelLight, outline: labelDark)
+        case .uprightPixel:
+            let points = PixelFont7.topLeftPoints(text, left: box.minX + 2, top: box.maxY - 1, maxWidth: box.width - 4)
+            PixelFont.draw(points, light: labelLight, outline: labelDark)
+        case .uprightText:
+            let string = outlined(text.uppercased(), font: NSFont.systemFont(ofSize: 8, weight: .bold))
+            string.draw(at: NSPoint(x: box.minX + 2, y: box.maxY - string.size().height))
+        }
+    }
+
+    /// The work graph's top value in its top-right corner, in the label style.
+    private static func drawScale(_ text: String, in box: NSRect) {
+        switch labelStyle {
+        case .sidewaysPixel:
+            PixelFont.draw(PixelFont.cornerPoints(text, right: box.maxX - 2, top: box.maxY - 1),
+                           light: labelLight, outline: labelDark)
+        case .uprightPixel:
+            PixelFont.draw(PixelFont7.topRightPoints(text, right: box.maxX - 2, top: box.maxY - 1),
+                           light: labelLight, outline: labelDark)
+        case .uprightText:
+            let string = outlined(text, font: NSFont.monospacedDigitSystemFont(ofSize: 8, weight: .bold))
+            string.draw(at: NSPoint(x: box.maxX - 2 - string.size().width, y: box.maxY - string.size().height))
+        }
     }
 }
