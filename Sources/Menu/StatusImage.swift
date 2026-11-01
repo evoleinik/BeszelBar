@@ -22,34 +22,37 @@ struct StatusGraph: Equatable {
     let mem: [Double]
 }
 
-/// Draws the menu bar item: for each machine, its name turned like a book spine (reading top to
-/// bottom, as on English books) and a small graph with CPU and memory lines.
+/// Draws the menu bar item: for each machine, its name turned like a book spine (reading bottom to
+/// top) right against a graph with CPU and memory lines. Graphs are as tall as Stats draws its own.
 enum StatusImage {
-    static let height: CGFloat = 16
-    static let graphWidth: CGFloat = 28
-    static let labelWidth: CGFloat = 9
-    static let gap: CGFloat = 2
-    static let spacing: CGFloat = 5
+    /// Stats' graph height: the menu bar's thickness less a point above and below.
+    static var height: CGFloat { max(16, NSStatusBar.system.thickness - 2) }
+    static let graphWidth: CGFloat = 30
+    static let labelFont = NSFont.systemFont(ofSize: 9, weight: .medium)
+    static let labelGap: CGFloat = 1.5  // from the name's baseline to its graph
+    static var labelWidth: CGFloat { (labelGap + labelFont.ascender).rounded(.up) }
+    static let spacing: CGFloat = 6     // between one machine's graph and the next name
     static let cpuColor = NSColor(srgbRed: 0.52, green: 0.72, blue: 0.92, alpha: 1)
     static let memColor = NSColor(srgbRed: 0.59, green: 0.77, blue: 0.35, alpha: 1)
 
     static func width(for count: Int) -> CGFloat {
         guard count > 0 else { return 0 }
-        return CGFloat(count) * (labelWidth + gap + graphWidth) + CGFloat(count - 1) * spacing
+        return CGFloat(count) * (labelWidth + graphWidth) + CGFloat(count - 1) * spacing
     }
 
     static func make(_ graphs: [StatusGraph], appearance: NSAppearance) -> NSImage {
+        let height = Self.height
         let image = NSImage(size: NSSize(width: width(for: graphs.count), height: height), flipped: false) { _ in
             appearance.performAsCurrentDrawingAppearance {
                 var x: CGFloat = 0
                 for graph in graphs {
-                    drawLabel(graph.label, in: NSRect(x: x, y: 0, width: labelWidth, height: height))
-                    let box = NSRect(x: x + labelWidth + gap, y: 0, width: graphWidth, height: height)
+                    let box = NSRect(x: x + labelWidth, y: 0, width: graphWidth, height: height)
+                    drawLabel(graph.label, beside: box)
                     NSColor(white: 0.16, alpha: 1).setFill()
                     NSBezierPath(roundedRect: box, xRadius: 2, yRadius: 2).fill()
                     stroke(graph.mem, in: box, color: memColor)
                     stroke(graph.cpu, in: box, color: cpuColor)
-                    x += labelWidth + gap + graphWidth + spacing
+                    x += labelWidth + graphWidth + spacing
                 }
             }
             return true
@@ -72,25 +75,24 @@ enum StatusImage {
         path.stroke()
     }
 
-    /// The name rotated a quarter turn clockwise, centred in `rect`, shrunk to fit its height.
-    private static func drawLabel(_ text: String, in rect: NSRect) {
+    /// The name turned a quarter turn anticlockwise, reading bottom to top, centred on the graph's
+    /// height, with its baseline `labelGap` to the left of the graph.
+    private static func drawLabel(_ text: String, beside box: NSRect) {
         guard !text.isEmpty else { return }
-        var fontSize: CGFloat = 7.5
-        var string: NSAttributedString
-        repeat {
-            string = NSAttributedString(string: text, attributes: [
-                .font: NSFont.systemFont(ofSize: fontSize, weight: .medium),
-                .foregroundColor: NSColor.labelColor,
-            ])
-            fontSize -= 0.5
-        } while string.size().width > rect.height && fontSize >= 4
-        let size = string.size()
+        var font = labelFont
+        var string = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: NSColor.labelColor])
+        while string.size().width > box.height - 2 && font.pointSize > 5 {
+            font = NSFont.systemFont(ofSize: font.pointSize - 0.5, weight: .medium)
+            string = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: NSColor.labelColor])
+        }
         NSGraphicsContext.saveGraphicsState()
         let transform = NSAffineTransform()
-        transform.translateX(by: rect.midX, yBy: rect.midY)
-        transform.rotate(byDegrees: -90)
+        transform.translateX(by: box.minX, yBy: box.midY)
+        transform.rotate(byDegrees: 90)
         transform.concat()
-        string.draw(at: NSPoint(x: -size.width / 2, y: -size.height / 2))
+        // Rotated: +x runs up the graph's edge, +y runs left, away from the graph.
+        // draw(at:) places the line's bottom (the descender) at y, so the baseline sits at y - descender.
+        string.draw(at: NSPoint(x: -string.size().width / 2, y: labelGap + font.descender))
         NSGraphicsContext.restoreGraphicsState()
     }
 }

@@ -34,7 +34,10 @@ expect(pts.count == 3, "count")
 expect(abs(pts[2].x - 40) < 0.001 && abs(pts[0].x - (40 - 2 * step)) < 0.001, "x \(pts.map(\.x))")
 expect(pts[1].y == 15 && pts[2].y == 1, "clamp \(pts.map(\.y))")
 expect(Sparkline.points(Array(repeating: 5, count: 90), width: 40, height: 16, capacity: 60).count == 60, "capacity")
-expect(StatusImage.width(for: 2) == 2 * (9 + 2 + 28) + 5, "width \(StatusImage.width(for: 2))")
+expect(StatusImage.width(for: 2) == 2 * (StatusImage.labelWidth + StatusImage.graphWidth) + StatusImage.spacing,
+       "width \(StatusImage.width(for: 2))")
+expect(StatusImage.labelWidth <= 12, "name column \(StatusImage.labelWidth) pt")
+expect(StatusImage.height >= 16, "height \(StatusImage.height)")
 
 // Averaging: one point per 5-second window, the mean of its readings.
 var bucket = ReadingBucket(window: 5)
