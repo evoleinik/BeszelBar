@@ -159,7 +159,7 @@ func pixel(_ image: NSImage, _ x: Int, _ yFromBottom: Int) -> NSColor {
     return rep.colorAt(x: x * s, y: rep.pixelsHigh - 1 - yFromBottom * s)!.usingColorSpace(.sRGB)!
 }
 // The rendered pixel goes through a colour-space round trip, so match it to the nearest palette colour.
-let palette = StatusImage.pressureColors + [StatusImage.memAreaColor, StatusImage.boxColor, StatusImage.cpuColor]
+let palette = StatusImage.pressureColors + [StatusImage.memAreaColor, StatusImage.boxColor, StatusImage.cpuColor, StatusImage.workColor]
 func same(_ a: NSColor, _ b: NSColor) -> Bool {
     func d(_ x: NSColor, _ y: NSColor) -> CGFloat {
         let x = x.usingColorSpace(.sRGB)!, y = y.usingColorSpace(.sRGB)!
@@ -177,8 +177,12 @@ let noData = StatusImage.make([StatusGraph(label: "", cpu: Array(repeating: 100,
                               work: nil, counts: nil, appearance: NSAppearance(named: .darkAqua)!)
 expect(same(pixel(noData, 30, 3), StatusImage.memAreaColor), "no pressure data draws grey, got \(pixel(noData, 30, 3))")
 // Bars reach the bottom edge with no dark row under them; zero draws nothing; corners stay cut.
-let busyWork = StatusImage.make([], work: Array(repeating: 3, count: 60), counts: nil, appearance: NSAppearance(named: .darkAqua)!)
-let idleWork = StatusImage.make([], work: Array(repeating: 0, count: 60), counts: nil, appearance: NSAppearance(named: .darkAqua)!)
+// Work columns two minutes apart, starting on a 16-minute block boundary.
+func workColumns(_ counts: [Double], from minute: Int = 29_000_000) -> [WorkScale.Column] {
+    counts.enumerated().map { WorkScale.Column(minute: minute + 2 * $0.offset, count: $0.element) }
+}
+let busyWork = StatusImage.make([], work: workColumns(Array(repeating: 3, count: 34)), counts: nil, appearance: NSAppearance(named: .darkAqua)!)
+let idleWork = StatusImage.make([], work: workColumns(Array(repeating: 0, count: 34)), counts: nil, appearance: NSAppearance(named: .darkAqua)!)
 func purple(_ c: NSColor) -> Bool { c.alphaComponent > 0.9 && c.blueComponent > 0.7 && c.redComponent > 0.35 && c.greenComponent < 0.6 }
 expect(purple(pixel(busyWork, 10, 0)), "work bar must reach the bottom row, got \(pixel(busyWork, 10, 0))")
 expect(!purple(pixel(idleWork, 10, 0)), "zero sessions must draw no bar")
@@ -193,11 +197,24 @@ let after = StatusImage.columns(Array((series + [55]).suffix(LiveMetricsService.
 expect(Array(after.prefix(width - 1)) == Array(before.suffix(width - 1)) && after.last! == 55, "live graph redraws its history")
 // Work columns are two fixed minutes each: a new minute never changes a finished column.
 let workMinutes = ["2026-11-01 08:50": 2.0, "2026-11-01 08:51": 4, "2026-11-01 08:52": 6]
-expect(WorkScale.columns(perMinute: workMinutes) == [3, 6], "work columns \(WorkScale.columns(perMinute: workMinutes))")
+expect(WorkScale.columns(perMinute: workMinutes).map(\.count) == [3, 6], "work columns \(WorkScale.columns(perMinute: workMinutes))")
+expect(WorkScale.columns(perMinute: workMinutes).map(\.minute) == [29_892_050, 29_892_052], "column start minutes (UTC)")
 var workLater = workMinutes; workLater["2026-11-01 08:53"] = 10
-expect(WorkScale.columns(perMinute: workLater) == [3, 8], "a new minute only changes the newest column")
+expect(WorkScale.columns(perMinute: workLater).map(\.count) == [3, 8], "a new minute only changes the newest column")
 let workHour = Dictionary(uniqueKeysWithValues: (0..<90).map { (String(format: "2026-11-01 %02d:%02d", 7 + $0 / 60, $0 % 60), Double($0)) })
 expect(WorkScale.columns(perMinute: workHour).count == width, "work graph holds one column per pixel")
+// The work graph's median steps: one per 16-minute block (8 columns), cyan, fixed in clock time.
+let stepWork = workColumns((0..<34).map { Double($0 < 8 ? 1 : $0 < 16 ? 2 : $0 < 24 ? 3 : 4) })  // top 5
+expect(WorkScale.medianSteps(stepWork).map { Int($0) } == (0..<34).map { [20, 40, 60, 80, 80][$0 / 8] }, "median steps")
+let stepImage = StatusImage.make([], work: stepWork, counts: nil, appearance: NSAppearance(named: .darkAqua)!)
+for (col, pct) in [(3, 20.0), (12, 40.0), (20, 60.0), (25, 80.0)] {  // 28+ sits under the corner number
+    let r = StatusImage.row(pct, height: Int(StatusImage.height))
+    expect(same(pixel(stepImage, col, r), StatusImage.cpuColor), "median step missing at column \(col), row \(r)")
+}
+// A new column scrolls the steps one pixel and changes no finished block's step.
+let stepLater = Array((stepWork + [WorkScale.Column(minute: stepWork.last!.minute + 2, count: 4)]).suffix(34))
+expect(Array(WorkScale.medianSteps(stepLater).prefix(33)) == Array(WorkScale.medianSteps(stepWork).suffix(33)),
+       "finished median steps changed when a new column arrived")
 // Out-of-range pressure never traps: huge values clamp to critical, NaN and negatives draw grey.
 expect(StatusImage.memColor(1e300) === StatusImage.pressureColors[2] && StatusImage.memColor(.infinity) === StatusImage.memColor(.nan),
        "out-of-range pressure")

@@ -25,7 +25,7 @@ final class AppState {
     }
 
     /// Working sessions summed across systems, one mean per two-minute graph column, oldest first.
-    var workHistory: [Double] = []
+    var workHistory: [WorkScale.Column] = []
     private var workHistoryKey = ""
     var isLoading = false
     var errorMessage: String?

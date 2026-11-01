@@ -26,19 +26,45 @@ enum WorkScale {
     }
 
     static let minutesPerColumn = 2
+    static let minutesPerBlock = 16  // one median step; 68 minutes on screen shows 4 and a sliver
 
-    /// Per-minute counts ("2026-11-01 08:52" -> sessions) as one mean per two-minute column,
+    /// One column of the work graph: when it starts (minutes since 1970, UTC) and its mean count.
+    struct Column: Equatable {
+        let minute: Int
+        let count: Double
+    }
+
+    private static let minuteFormat: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.dateFormat = "yyyy-MM-dd HH:mm"
+        return f
+    }()
+
+    /// Per-minute counts ("2026-11-01 08:52", UTC -> sessions) as one mean per two-minute column,
     /// oldest first, one per graph column. Columns start on even minutes, so a finished column
     /// never changes as new minutes arrive.
-    static func columns(perMinute: [String: Double]) -> [Double] {
-        var sums: [String: (total: Double, n: Double)] = [:]
-        for (minute, count) in perMinute {
-            guard minute.count >= 16, let mm = Int(minute.suffix(2)) else { continue }
-            let key = String(minute.prefix(14)) + String(format: "%02d", mm - mm % minutesPerColumn)
-            sums[key, default: (0, 0)].total += count
-            sums[key, default: (0, 0)].n += 1
+    static func columns(perMinute: [String: Double]) -> [Column] {
+        var sums: [Int: (total: Double, n: Double)] = [:]
+        for (key, count) in perMinute {
+            guard let date = minuteFormat.date(from: String(key.prefix(16))) else { continue }
+            let minute = Int(date.timeIntervalSince1970) / 60
+            let start = minute - minute % minutesPerColumn
+            sums[start, default: (0, 0)].total += count
+            sums[start, default: (0, 0)].n += 1
         }
-        return sums.keys.sorted().suffix(Int(StatusImage.graphWidth)).map { sums[$0]!.total / sums[$0]!.n }
+        return sums.keys.sorted().suffix(Int(StatusImage.graphWidth)).map { Column(minute: $0, count: sums[$0]!.total / sums[$0]!.n) }
+    }
+
+    /// For each column, the median of its 16-minute block, in percent of the graph's top. Blocks
+    /// are fixed in clock time, so a finished step never moves or changes. Each step uses the same
+    /// rounded median as the corner number does for the whole graph.
+    static func medianSteps(_ columns: [Column]) -> [Double] {
+        let t = Double(top(columns.map(\.count)))
+        var blocks: [Int: [Double]] = [:]
+        for c in columns { blocks[c.minute / minutesPerBlock, default: []].append(c.count) }
+        return columns.map { Double(summary(blocks[$0.minute / minutesPerBlock]!).median) / t * 100 }
     }
 }
 
@@ -124,7 +150,7 @@ enum StatusImage {
         attentionLayout(counts).last.map { $0.x + $0.width } ?? 0
     }
 
-    static func make(_ graphs: [StatusGraph], work: [Double]?, counts: StatusCounts?, appearance: NSAppearance) -> NSImage {
+    static func make(_ graphs: [StatusGraph], work: [WorkScale.Column]?, counts: StatusCounts?, appearance: NSAppearance) -> NSImage {
         let height = Self.height
         let machines = width(for: graphs.count)
         let workWidth: CGFloat = work == nil ? 0 : (machines > 0 ? spacing : 0) + graphWidth
@@ -146,11 +172,14 @@ enum StatusImage {
                     let start = machines > 0 ? machines + spacing : 0
                     let box = NSRect(x: start, y: 0, width: graphWidth, height: height)
                     pixelBox(box)
-                    drawGrid(top: WorkScale.top(work), in: box)
-                    pixelBars(WorkScale.percent(work), in: box, color: workColor)
+                    let counts = work.map(\.count)
+                    drawGrid(top: WorkScale.top(counts), in: box)
+                    pixelBars(WorkScale.percent(counts), in: box, color: workColor)
+                    // The median of each 16-minute block as a cyan step line, the CPU lines' colour.
+                    pixelLine(WorkScale.medianSteps(work), in: box, color: cpuColor)
                     pixelBox(box, color: nil)
                     drawLabel("W", inside: box)
-                    drawScale("\(WorkScale.summary(work).median)", in: box)
+                    drawScale("\(WorkScale.summary(counts).median)", in: box)
                 }
                 if let counts {
                     for item in attentionLayout(counts) {

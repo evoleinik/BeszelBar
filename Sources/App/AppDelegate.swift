@@ -77,7 +77,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return StatusGraph(label: system.name.lowercased(), cpu: points.map(\.cpu), mem: points.map(\.mem),
                                pressure: points.map(\.pressure))
         }
-        let work: [Double]? = counts == nil || appState.workHistory.isEmpty ? nil : appState.workHistory
+        let work: [WorkScale.Column]? = counts == nil || appState.workHistory.isEmpty ? nil : appState.workHistory
         if graphs.isEmpty && counts == nil {
             button.image = NSImage(systemSymbolName: alertCount > 0 ? "server.rack.fill" : "server.rack",
                                    accessibilityDescription: "BeszelBar")
