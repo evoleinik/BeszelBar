@@ -24,6 +24,15 @@ struct LivePoint: Equatable {
               let cpu = message.stats?.cpu, let mem = message.stats?.mp else { return nil }
         return LivePoint(cpu: cpu, mem: mem, pressure: message.stats?.cm?[pressureKey])
     }
+
+    /// The hub's one-minute rows as points, oldest first. Pressure joins by minute, the first 16
+    /// characters of `created` ("2026-11-01 08:52"), since it lives in a separate collection.
+    static func fromMinutes(_ rows: [(created: String, cpu: Double, mem: Double)],
+                            pressure: [String: Double]) -> [LivePoint] {
+        rows.sorted { $0.created < $1.created }.map {
+            LivePoint(cpu: $0.cpu, mem: $0.mem, pressure: pressure[String($0.created.prefix(16))])
+        }
+    }
 }
 
 /// Averages one-second readings into one point per window, so the graph moves calmly.
@@ -96,7 +105,8 @@ enum RealtimeTopic {
 
 /// Keeps five minutes of CPU and memory per system from Beszel's realtime feed: one point per
 /// five seconds, each the average of that window's one-second readings. While it runs, the hub
-/// asks those agents for numbers every second.
+/// asks those agents for numbers every second. On start, the hub's last one-minute rows fill the
+/// graph, so it is never empty; live points push them out over five minutes.
 @MainActor
 final class LiveMetricsService {
     static let shared = LiveMetricsService()
@@ -104,6 +114,7 @@ final class LiveMetricsService {
     nonisolated static let window = 5.0
 
     private var buckets: [String: ReadingBucket] = [:]
+    private var seeded: Set<String> = []
 
     private(set) var history: [String: [LivePoint]] = [:]
     var onUpdate: (() -> Void)?
@@ -127,6 +138,7 @@ final class LiveMetricsService {
         task?.cancel()
         history = history.filter { systemIDs.contains($0.key) }
         buckets = buckets.filter { systemIDs.contains($0.key) }
+        seeded = seeded.filter { systemIDs.contains($0) }
         guard !systemIDs.isEmpty else {
             task = nil
             return
@@ -155,7 +167,27 @@ final class LiveMetricsService {
         configKey = ""
         history = [:]
         buckets = [:]
+        seeded = []
         onUpdate?()
+    }
+
+    /// Systems whose graph has not been filled from the hub's one-minute rows yet.
+    func unseeded(_ systemIDs: [String]) -> [String] { systemIDs.filter { !seeded.contains($0) } }
+
+    /// Fills a system's graph from the hub's last minutes, once, ahead of any live points.
+    func seed(_ minutes: [LivePoint], for systemID: String) {
+        guard !seeded.contains(systemID) else { return }
+        seeded.insert(systemID)
+        history[systemID] = Self.merged(minutes: minutes, live: history[systemID] ?? [])
+        onUpdate?()
+    }
+
+    /// Each minute becomes one point per window, older than every live point; the newest
+    /// `capacity` points are kept.
+    nonisolated static func merged(minutes: [LivePoint], live: [LivePoint]) -> [LivePoint] {
+        let perMinute = Int(60 / window)
+        let filled = minutes.flatMap { Array(repeating: $0, count: perMinute) }
+        return Array((filled + live).suffix(capacity))
     }
 
     private func append(_ reading: LivePoint, for systemID: String) {

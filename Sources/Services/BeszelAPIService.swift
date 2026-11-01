@@ -156,7 +156,8 @@ final class BeszelAPIService: @unchecked Sendable {
         }
     }
 
-    func fetchSystemStats(systemID: String, limit: Int = 1) async throws -> [SystemStatsRecord] {
+    /// The newest `limit` stats rows for a system. `type` picks one resolution, such as "1m".
+    func fetchSystemStats(systemID: String, limit: Int = 1, type: String? = nil) async throws -> [SystemStatsRecord] {
         guard var components = URLComponents(string: instance.url) else {
             throw URLError(.badURL)
         }
@@ -164,7 +165,7 @@ final class BeszelAPIService: @unchecked Sendable {
         components.queryItems = [
             URLQueryItem(name: "perPage", value: String(limit)),
             URLQueryItem(name: "sort", value: "-created"),
-            URLQueryItem(name: "filter", value: "system = '\(systemID)'")
+            URLQueryItem(name: "filter", value: "system = '\(systemID)'" + (type.map { " && type = '\($0)'" } ?? ""))
         ]
 
         guard let url = components.url else { throw URLError(.badURL) }

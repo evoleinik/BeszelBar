@@ -151,6 +151,25 @@ final class AppState {
         LiveMetricsService.shared.configure(baseURL: instance.url, systemIDs: ids) { refresh in
             try await service.validToken(refresh: refresh)
         }
+        // Fill each new graph from the hub's last five one-minute rows, so it never starts empty.
+        let missing = LiveMetricsService.shared.unseeded(ids)
+        guard !missing.isEmpty else { return }
+        Task {
+            for id in missing {
+                guard let rows = try? await service.fetchSystemStats(systemID: id, limit: 5, type: "1m"),
+                      !rows.isEmpty else { continue }
+                let custom = (try? await service.fetchCustomStatsHistory(systemID: id, limit: 5)) ?? []
+                var pressure: [String: Double] = [:]
+                for row in custom {
+                    if let level = row.stats[LivePoint.pressureKey] { pressure[String((row.created ?? "").prefix(16))] = level }
+                }
+                let minutes = rows.compactMap { row -> (created: String, cpu: Double, mem: Double)? in
+                    guard let cpu = row.stats?.cpu, let mem = row.stats?.mp else { return nil }
+                    return (row.created, cpu, mem)
+                }
+                LiveMetricsService.shared.seed(LivePoint.fromMinutes(minutes, pressure: pressure), for: id)
+            }
+        }
     }
 
     func loadAgentStats() {
