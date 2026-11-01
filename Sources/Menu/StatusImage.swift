@@ -35,14 +35,15 @@ struct StatusCounts: Equatable {
     var values: [Int] { [working, needsYou, yourTurn, stale] }
 }
 
-/// One machine in the menu bar item: its name and its recent CPU and memory readings.
+/// One machine in the menu bar item: its name and its recent CPU, memory and pressure readings.
 struct StatusGraph: Equatable {
     let label: String
     let cpu: [Double]
     let mem: [Double]
+    var pressure: [Double?] = []
 }
 
-/// Draws the menu bar item: a graph per machine (CPU line over a grey RAM area, name in the corner),
+/// Draws the menu bar item: a graph per machine (CPU line over a RAM area coloured by pressure),
 /// the work graph, then the N and T counts. Graphs are as tall as Stats draws its own.
 enum StatusImage {
     /// Stats' graph height: the menu bar's thickness less a point above and below.
@@ -57,8 +58,17 @@ enum StatusImage {
     static let bigFont = NSFont.monospacedDigitSystemFont(ofSize: 14, weight: .semibold)
     static let letterFont = NSFont.systemFont(ofSize: 9, weight: .semibold)
     static let workCapacity = 60  // one point per minute: the last hour
-    static let cpuColor = NSColor(srgbRed: 0x6C / 255, green: 0xD4 / 255, blue: 0xFF / 255, alpha: 1)    // bright cyan line
-    static let memAreaColor = NSColor(srgbRed: 0x6E / 255, green: 0x6E / 255, blue: 0x6E / 255, alpha: 1) // grey level
+    static let cpuColor = NSColor(white: 0.96, alpha: 1)  // white line, clear on every pressure colour
+    static let memAreaColor = NSColor(srgbRed: 0x6E / 255, green: 0x6E / 255, blue: 0x6E / 255, alpha: 1) // no pressure data
+    /// The RAM area's colour by memory pressure, as Activity Monitor does: normal, warning, critical.
+    static let pressureColors = [NSColor(srgbRed: 0x1F / 255, green: 0x7A / 255, blue: 0x3A / 255, alpha: 1),
+                                 NSColor(srgbRed: 0xB0 / 255, green: 0x7A / 255, blue: 0x00 / 255, alpha: 1),
+                                 NSColor(srgbRed: 0xB3 / 255, green: 0x26 / 255, blue: 0x1E / 255, alpha: 1)]
+
+    static func memColor(_ level: Double?) -> NSColor {
+        guard let level, level >= 0 else { return memAreaColor }
+        return pressureColors[min(pressureColors.count - 1, Int(level.rounded()))]
+    }
     static let boxColor = NSColor(white: 0.16, alpha: 1)
 
     static func width(for count: Int) -> CGFloat {
@@ -109,7 +119,8 @@ enum StatusImage {
                 for graph in graphs {
                     let box = NSRect(x: x, y: 0, width: graphWidth, height: height)
                     pixelBox(box)
-                    pixelBars(graph.mem, in: box, color: memAreaColor, capacity: LiveMetricsService.capacity)
+                    pixelBars(graph.mem, in: box, color: memAreaColor, capacity: LiveMetricsService.capacity,
+                              levels: graph.pressure)
                     pixelLine(graph.cpu, in: box, color: cpuColor, capacity: LiveMetricsService.capacity)
                     drawLabel(graph.label, inside: box)
                     x += graphWidth + spacing
@@ -146,7 +157,7 @@ enum StatusImage {
 
     /// The value for each whole-point column of a graph, newest at the right edge. Columns
     /// older than the history are nil.
-    static func columns(_ values: [Double], count: Int, capacity: Int) -> [Double?] {
+    static func columns<T>(_ values: [T], count: Int, capacity: Int) -> [T?] {
         guard count > 1, capacity > 1, !values.isEmpty else { return Array(repeating: nil, count: max(0, count)) }
         let shown = Array(values.suffix(capacity))
         let missing = capacity - shown.count
@@ -197,13 +208,17 @@ enum StatusImage {
     }
 
     /// Solid one-point bars from the box bottom, one per column. `floor` is the first row filled.
-    private static func pixelBars(_ values: [Double], in box: NSRect, color: NSColor, capacity: Int, floor: Int = 1) {
+    /// With `levels`, each column takes its memory-pressure colour.
+    private static func pixelBars(_ values: [Double], in box: NSRect, color: NSColor, capacity: Int, floor: Int = 1,
+                                  levels: [Double?]? = nil) {
         let cols = columns(values, count: Int(box.width), capacity: capacity)
+        let tints = levels.map { columns($0, count: Int(box.width), capacity: capacity) }
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current?.shouldAntialias = false
         color.setFill()
         for (col, value) in cols.enumerated() {
             guard let value else { continue }
+            if let tints { memColor(tints[col] ?? nil).setFill() }
             let top = floor == 0 ? Int((min(max(value, 0), 100) / 100 * Double(box.height)).rounded())
                                  : row(value, height: Int(box.height))
             guard top > floor - 1 else { continue }

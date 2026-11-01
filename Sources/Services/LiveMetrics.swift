@@ -1,14 +1,19 @@
 import Foundation
 
-/// One live reading for a system: CPU and memory use, in percent.
+/// One live reading for a system: CPU and memory use, in percent, and memory pressure
+/// (0 normal, 1 warning, 2 critical) when the machine runs mem-pressure.sh.
 struct LivePoint: Equatable {
     let cpu: Double
     let mem: Double
+    var pressure: Double? = nil
+
+    static let pressureKey = "memory_pressure_level"
 
     private struct Message: Decodable {
         struct Stats: Decodable {
             let cpu: Double?
             let mp: Double?
+            let cm: [String: Double]?  // custom metrics, henrygd/beszel#2562
         }
         let stats: Stats?
     }
@@ -17,17 +22,19 @@ struct LivePoint: Equatable {
     static func decode(_ json: String) -> LivePoint? {
         guard let message = try? JSONDecoder().decode(Message.self, from: Data(json.utf8)),
               let cpu = message.stats?.cpu, let mem = message.stats?.mp else { return nil }
-        return LivePoint(cpu: cpu, mem: mem)
+        return LivePoint(cpu: cpu, mem: mem, pressure: message.stats?.cm?[pressureKey])
     }
 }
 
 /// Averages one-second readings into one point per window, so the graph moves calmly.
+/// Pressure keeps the window's highest level, so a short spike still shows.
 struct ReadingBucket {
     let window: Double
     private var start: Double?
     private var cpu = 0.0
     private var mem = 0.0
     private var count = 0
+    private var pressure: Double?  // the window's worst
 
     init(window: Double) { self.window = window }
 
@@ -36,10 +43,12 @@ struct ReadingBucket {
         if start == nil { start = time }
         cpu += point.cpu
         mem += point.mem
+        if let p = point.pressure { pressure = max(pressure ?? p, p) }
         count += 1
         guard let begun = start, time - begun >= window else { return nil }
-        let average = LivePoint(cpu: cpu / Double(count), mem: mem / Double(count))
+        let average = LivePoint(cpu: cpu / Double(count), mem: mem / Double(count), pressure: pressure)
         start = nil
+        pressure = nil
         cpu = 0
         mem = 0
         count = 0

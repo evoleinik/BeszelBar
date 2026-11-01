@@ -26,6 +26,10 @@ expect(options == #"{"query":{"system":"x1y2"}}"#, "options \(options ?? "nil")"
 let message = #"{"stats":{"cpu":72.55,"mp":66.51,"m":62.7},"info":{"h":"box"},"container":[]}"#
 expect(LivePoint.decode(message) == LivePoint(cpu: 72.55, mem: 66.51), "decode")
 expect(LivePoint.decode(#"{"info":{}}"#) == nil, "message without stats must be nil")
+// Pressure comes from the custom metrics map, when the machine runs mem-pressure.sh.
+let withPressure = #"{"stats":{"cpu":10,"mp":90,"cm":{"memory_pressure_level":2,"agent_sessions_working":3}}}"#
+expect(LivePoint.decode(withPressure)?.pressure == 2, "pressure from cm \(String(describing: LivePoint.decode(withPressure)))")
+expect(LivePoint.decode(message)?.pressure == nil, "no cm means no pressure")
 
 expect(StatusImage.width(for: 2) == 2 * StatusImage.graphWidth + StatusImage.spacing,
        "width \(StatusImage.width(for: 2))")
@@ -67,6 +71,13 @@ for (t, cpu) in [(0.0, 10.0), (1, 20), (2, 30), (3, 40), (4, 50), (5, 60), (6, 7
     if let p = bucket.add(LivePoint(cpu: cpu, mem: 50), at: t) { averaged.append(p) }
 }
 expect(averaged == [LivePoint(cpu: 35, mem: 50)], "averaged \(averaged)")
+// Pressure keeps the window's worst level, so a short spike still shows.
+var pressureBucket = ReadingBucket(window: 5)
+var worst: LivePoint?
+for (t, p) in [(0.0, 0.0), (1, 2), (2, 1), (5, 0)] {
+    if let point = pressureBucket.add(LivePoint(cpu: 1, mem: 1, pressure: p), at: t) { worst = point }
+}
+expect(worst?.pressure == 2, "window pressure \(String(describing: worst?.pressure))")
 
 // Work graph: counts scale to at least 5 sessions, or the hour's peak.
 expect(WorkScale.percent([1, 2, 5]) == [20, 40, 100], "work scale \(WorkScale.percent([1, 2, 5]))")
@@ -121,6 +132,34 @@ expect(brightness(StatusImage.memAreaColor) - brightness(StatusImage.boxColor) >
        "RAM area too close to the box background (\(brightness(StatusImage.memAreaColor)) vs \(brightness(StatusImage.boxColor)))")
 expect(brightness(StatusImage.cpuColor) - brightness(StatusImage.memAreaColor) >= 0.4,
        "CPU line too close to the RAM area (\(brightness(StatusImage.cpuColor)) vs \(brightness(StatusImage.memAreaColor)))")
+for color in StatusImage.pressureColors {
+    expect(brightness(color) - brightness(StatusImage.boxColor) >= 0.2, "pressure colour \(color) too close to the box")
+    expect(brightness(StatusImage.cpuColor) - brightness(color) >= 0.25, "CPU line too close to pressure colour \(color)")
+}
+// Each RAM column takes its pressure colour: green while normal, red once critical, grey with no data.
+func pixel(_ image: NSImage, _ x: Int, _ yFromBottom: Int) -> NSColor {
+    let rep = NSBitmapImageRep(data: image.tiffRepresentation!)!
+    let s = rep.pixelsWide / Int(image.size.width)
+    return rep.colorAt(x: x * s, y: rep.pixelsHigh - 1 - yFromBottom * s)!.usingColorSpace(.sRGB)!
+}
+// The rendered pixel goes through a colour-space round trip, so match it to the nearest palette colour.
+let palette = StatusImage.pressureColors + [StatusImage.memAreaColor, StatusImage.boxColor, StatusImage.cpuColor]
+func same(_ a: NSColor, _ b: NSColor) -> Bool {
+    func d(_ x: NSColor, _ y: NSColor) -> CGFloat {
+        let x = x.usingColorSpace(.sRGB)!, y = y.usingColorSpace(.sRGB)!
+        return pow(x.redComponent - y.redComponent, 2) + pow(x.greenComponent - y.greenComponent, 2)
+            + pow(x.blueComponent - y.blueComponent, 2)
+    }
+    return palette.min { d(a, $0) < d(a, $1) } === b
+}
+let rising = StatusImage.make([StatusGraph(label: "", cpu: Array(repeating: 100, count: 60), mem: Array(repeating: 80, count: 60),
+                                           pressure: (0..<60).map { $0 < 30 ? 0 : 2 })],
+                              work: nil, counts: nil, appearance: NSAppearance(named: .darkAqua)!)
+expect(same(pixel(rising, 3, 3), StatusImage.pressureColors[0]), "old columns green, got \(pixel(rising, 3, 3))")
+expect(same(pixel(rising, 30, 3), StatusImage.pressureColors[2]), "new columns red, got \(pixel(rising, 30, 3))")
+let noData = StatusImage.make([StatusGraph(label: "", cpu: Array(repeating: 100, count: 60), mem: Array(repeating: 80, count: 60))],
+                              work: nil, counts: nil, appearance: NSAppearance(named: .darkAqua)!)
+expect(same(pixel(noData, 30, 3), StatusImage.memAreaColor), "no pressure data draws grey, got \(pixel(noData, 30, 3))")
 
 // Proportional: a wide W takes more room than a narrow I.
 expect(PixelFace.medium.length("W") == 5 && PixelFace.medium.length("I") == 3, "proportional widths")

@@ -74,7 +74,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .sorted { (isMac($0, appState) ? 1 : 0, $0.name) < (isMac($1, appState) ? 1 : 0, $1.name) }
         let graphs = systems.map { system -> StatusGraph in
             let points = live[system.id] ?? []
-            return StatusGraph(label: system.name.lowercased(), cpu: points.map(\.cpu), mem: points.map(\.mem))
+            return StatusGraph(label: system.name.lowercased(), cpu: points.map(\.cpu), mem: points.map(\.mem),
+                               pressure: points.map(\.pressure))
         }
         let work: [Double]? = counts == nil || appState.workHistory.isEmpty ? nil : appState.workHistory
         if graphs.isEmpty && counts == nil {
