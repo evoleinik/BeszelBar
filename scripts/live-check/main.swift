@@ -34,9 +34,26 @@ expect(pts.count == 3, "count")
 expect(abs(pts[2].x - 40) < 0.001 && abs(pts[0].x - (40 - 2 * step)) < 0.001, "x \(pts.map(\.x))")
 expect(pts[1].y == 15 && pts[2].y == 1, "clamp \(pts.map(\.y))")
 expect(Sparkline.points(Array(repeating: 5, count: 90), width: 40, height: 16, capacity: 60).count == 60, "capacity")
-expect(StatusImage.width(for: 2) == 2 * (StatusImage.labelWidth + StatusImage.graphWidth) + StatusImage.spacing,
+expect(StatusImage.width(for: 2) == 2 * StatusImage.graphWidth + StatusImage.spacing,
        "width \(StatusImage.width(for: 2))")
-expect(StatusImage.labelWidth <= 12, "name column \(StatusImage.labelWidth) pt")
+// Names inside the graph: render one graph and check the letters never reach the box's edge
+// column. The box is dark; letters are light, so a bright pixel in column 0 means they spilled out.
+import AppKit
+let probe = StatusImage.make([StatusGraph(label: "box", cpu: [], mem: [])], work: nil, counts: nil,
+                             appearance: NSAppearance(named: .darkAqua)!)
+let rep = NSBitmapImageRep(data: probe.tiffRepresentation!)!
+var edgeBright = 0, innerBright = 0
+for y in 0..<rep.pixelsHigh {
+    for x in 0..<rep.pixelsWide {
+        guard let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+        let bright = c.brightnessComponent > 0.6 && c.alphaComponent > 0.5
+        if bright && x == 0 { edgeBright += 1 }
+        if bright && x > 0 && x < rep.pixelsWide / 3 { innerBright += 1 }
+    }
+}
+expect(edgeBright == 0, "letters reach the left edge (\(edgeBright) bright pixels in column 0)")
+expect(innerBright > 3, "label drawn inside the graph (\(innerBright) bright pixels)")
+expect(StatusImage.outlined("work", font: StatusImage.labelFont).size().width <= StatusImage.height - 2, "work fits the height")
 expect(StatusImage.height >= 16, "height \(StatusImage.height)")
 
 // Averaging: one point per 5-second window, the mean of its readings.

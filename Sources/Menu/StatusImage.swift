@@ -62,10 +62,9 @@ struct StatusGraph: Equatable {
 enum StatusImage {
     /// Stats' graph height: the menu bar's thickness less a point above and below.
     static var height: CGFloat { max(16, NSStatusBar.system.thickness - 2) }
-    static let graphWidth: CGFloat = 30
-    static let labelFont = NSFont.systemFont(ofSize: 9, weight: .medium)
-    static let labelGap: CGFloat = 1.5  // from the name's baseline to its graph
-    static var labelWidth: CGFloat { (labelGap + labelFont.ascender).rounded(.up) }
+    static let graphWidth: CGFloat = 34
+    static let labelFont = NSFont.systemFont(ofSize: 6.5, weight: .bold)
+    static let labelInset: CGFloat = 1  // from the graph's left edge to the tops of the letters
     static let spacing: CGFloat = 3     // between one graph and the next name
     static let workingColor = NSColor(srgbRed: 0.22, green: 0.54, blue: 0.87, alpha: 1)
     static let needsYouColor = NSColor(srgbRed: 0.94, green: 0.62, blue: 0.15, alpha: 1)
@@ -81,7 +80,7 @@ enum StatusImage {
 
     static func width(for count: Int) -> CGFloat {
         guard count > 0 else { return 0 }
-        return CGFloat(count) * (labelWidth + graphWidth) + CGFloat(count - 1) * spacing
+        return CGFloat(count) * graphWidth + CGFloat(count - 1) * spacing
     }
 
     /// "1N" and "18T": the two counts that ask something of you. N sits in an amber pill above zero.
@@ -103,31 +102,31 @@ enum StatusImage {
     static func make(_ graphs: [StatusGraph], work: [Double]?, counts: StatusCounts?, appearance: NSAppearance) -> NSImage {
         let height = Self.height
         let machines = width(for: graphs.count)
-        let workStats = work.map(WorkScale.summary)
-        let workWidth: CGFloat = work == nil ? 0
-            : (machines > 0 ? spacing : 0) + labelWidth + graphWidth + 1.5 + statsWidth(workStats!)
+        let workWidth: CGFloat = work == nil ? 0 : (machines > 0 ? spacing : 0) + graphWidth
         let countsX = machines + workWidth + ((machines + workWidth) > 0 && counts != nil ? spacing : 0)
         let total = countsX + (counts.map { attentionWidth($0) } ?? 0)
         let image = NSImage(size: NSSize(width: total, height: height), flipped: false) { _ in
             appearance.performAsCurrentDrawingAppearance {
                 var x: CGFloat = 0
                 for graph in graphs {
-                    let box = NSRect(x: x + labelWidth, y: 0, width: graphWidth, height: height)
-                    drawLabel(graph.label, beside: box)
+                    let box = NSRect(x: x, y: 0, width: graphWidth, height: height)
                     NSColor(white: 0.16, alpha: 1).setFill()
                     NSBezierPath(roundedRect: box, xRadius: 2, yRadius: 2).fill()
                     stroke(graph.mem, in: box, color: memColor)
                     stroke(graph.cpu, in: box, color: cpuColor)
-                    x += labelWidth + graphWidth + spacing
+                    drawLabel(graph.label, inside: box)
+                    x += graphWidth + spacing
                 }
                 if let work {
                     let start = machines > 0 ? machines + spacing : 0
-                    let box = NSRect(x: start + labelWidth, y: 0, width: graphWidth, height: height)
-                    drawLabel("work", beside: box)
+                    let box = NSRect(x: start, y: 0, width: graphWidth, height: height)
                     NSColor(white: 0.16, alpha: 1).setFill()
                     NSBezierPath(roundedRect: box, xRadius: 2, yRadius: 2).fill()
+                    drawGrid(top: WorkScale.top(work), in: box)
                     fillArea(WorkScale.percent(work), in: box, color: workColor)
-                    drawStats(workStats!, at: box.maxX + 1.5, height: height)
+                    drawLabel("work", inside: box)
+                    let top = outlined("\(WorkScale.top(work))", font: labelFont)
+                    top.draw(at: NSPoint(x: box.maxX - top.size().width - 1.5, y: box.maxY - top.size().height + 0.5))
                 }
                 if let counts {
                     var cx = countsX
@@ -148,24 +147,6 @@ enum StatusImage {
         }
         image.isTemplate = false
         return image
-    }
-
-    /// Max, median and now, stacked top to bottom beside the work graph.
-    static func statsWidth(_ summary: WorkScale.Summary) -> CGFloat {
-        [summary.max, summary.median, summary.now].map {
-            NSAttributedString(string: "\($0)", attributes: [.font: scaleFont]).size().width
-        }.max()!.rounded(.up)
-    }
-
-    private static func drawStats(_ summary: WorkScale.Summary, at x: CGFloat, height: CGFloat) {
-        let rows = [(summary.max, NSColor.secondaryLabelColor), (summary.median, NSColor.secondaryLabelColor),
-                    (summary.now, NSColor.labelColor)]
-        let rowHeight = height / 3
-        for (index, (value, color)) in rows.enumerated() {
-            let text = NSAttributedString(string: "\(value)", attributes: [.font: scaleFont, .foregroundColor: color])
-            let size = text.size()
-            text.draw(at: NSPoint(x: x, y: height - (CGFloat(index) + 0.5) * rowHeight - size.height / 2))
-        }
     }
 
     /// One faint line per session (or per few sessions on a busy hour), so the height reads as a count.
@@ -212,24 +193,36 @@ enum StatusImage {
         path.stroke()
     }
 
-    /// The name turned a quarter turn anticlockwise, reading bottom to top, centred on the graph's
-    /// height, with its baseline `labelGap` to the left of the graph.
-    private static func drawLabel(_ text: String, beside box: NSRect) {
+    /// Light text with a thin dark outline, so it stays readable over the lines it covers.
+    static func outlined(_ text: String, font: NSFont) -> NSAttributedString {
+        NSAttributedString(string: text, attributes: [
+            .font: font,
+            .foregroundColor: NSColor(white: 0.95, alpha: 1),
+            .strokeColor: NSColor(white: 0.16, alpha: 1),
+            .strokeWidth: -5,  // negative: fill and outline together
+        ])
+    }
+
+    /// The name turned a quarter turn anticlockwise (reading bottom to top) along the graph's left
+    /// edge, inside it and over the lines. The letter tops stay `labelInset` inside the edge.
+    private static func drawLabel(_ text: String, inside box: NSRect) {
         guard !text.isEmpty else { return }
         var font = labelFont
-        var string = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: NSColor.labelColor])
-        while string.size().width > box.height - 2 && font.pointSize > 5 {
-            font = NSFont.systemFont(ofSize: font.pointSize - 0.5, weight: .medium)
-            string = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: NSColor.labelColor])
+        var string = outlined(text, font: font)
+        while string.size().width > box.height - 2 && font.pointSize > 4 {
+            font = NSFont.systemFont(ofSize: font.pointSize - 0.5, weight: .bold)
+            string = outlined(text, font: font)
         }
         NSGraphicsContext.saveGraphicsState()
         let transform = NSAffineTransform()
-        transform.translateX(by: box.minX, yBy: box.midY)
+        // Rotated a quarter turn anticlockwise, the letter tops face left. Put the baseline one
+        // ascender (plus the inset) in from the left edge, so the tops land on the inset.
+        transform.translateX(by: box.minX + labelInset + font.ascender, yBy: box.midY)
         transform.rotate(byDegrees: 90)
         transform.concat()
-        // Rotated: +x runs up the graph's edge, +y runs left, away from the graph.
-        // draw(at:) places the line's bottom (the descender) at y, so the baseline sits at y - descender.
-        string.draw(at: NSPoint(x: -string.size().width / 2, y: labelGap + font.descender))
+        // In the rotated frame +y runs left. draw(at:) puts the descender line at y, so the
+        // baseline sits at 0.
+        string.draw(at: NSPoint(x: -string.size().width / 2, y: font.descender))
         NSGraphicsContext.restoreGraphicsState()
     }
 }
