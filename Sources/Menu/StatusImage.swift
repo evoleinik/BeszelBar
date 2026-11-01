@@ -110,20 +110,18 @@ enum StatusImage {
                 var x: CGFloat = 0
                 for graph in graphs {
                     let box = NSRect(x: x, y: 0, width: graphWidth, height: height)
-                    NSColor(white: 0.16, alpha: 1).setFill()
-                    NSBezierPath(roundedRect: box, xRadius: 2, yRadius: 2).fill()
-                    stroke(graph.mem, in: box, color: memColor)
-                    stroke(graph.cpu, in: box, color: cpuColor)
+                    pixelBox(box)
+                    pixelLine(graph.mem, in: box, color: memColor, capacity: LiveMetricsService.capacity)
+                    pixelLine(graph.cpu, in: box, color: cpuColor, capacity: LiveMetricsService.capacity)
                     drawLabel(graph.label, inside: box)
                     x += graphWidth + spacing
                 }
                 if let work {
                     let start = machines > 0 ? machines + spacing : 0
                     let box = NSRect(x: start, y: 0, width: graphWidth, height: height)
-                    NSColor(white: 0.16, alpha: 1).setFill()
-                    NSBezierPath(roundedRect: box, xRadius: 2, yRadius: 2).fill()
+                    pixelBox(box)
                     drawGrid(top: WorkScale.top(work), in: box)
-                    fillArea(WorkScale.percent(work), in: box, color: workColor)
+                    pixelBars(WorkScale.percent(work), in: box, color: workColor, capacity: workCapacity)
                     drawLabel("W", inside: box)
                     drawScale("\(WorkScale.top(work))", in: box)
                 }
@@ -148,20 +146,88 @@ enum StatusImage {
         return image
     }
 
+    // MARK: Pixel-grid drawing, antialiasing off, one point per pixel (matches the pixel font).
+
+    /// The value for each whole-point column of a graph, newest at the right edge. Columns
+    /// older than the history are nil.
+    static func columns(_ values: [Double], count: Int, capacity: Int) -> [Double?] {
+        guard count > 1, capacity > 1, !values.isEmpty else { return Array(repeating: nil, count: max(0, count)) }
+        let shown = Array(values.suffix(capacity))
+        let missing = capacity - shown.count
+        return (0..<count).map { col in
+            let slot = Int((Double(col) * Double(capacity - 1) / Double(count - 1)).rounded())
+            let index = slot - missing
+            return index >= 0 && index < shown.count ? shown[index] : nil
+        }
+    }
+
+    /// Row (in whole points from the box bottom) for a percentage, kept one point inside the box.
+    static func row(_ percent: Double, height: Int) -> Int {
+        1 + Int((min(max(percent, 0), 100) / 100 * Double(height - 3)).rounded())
+    }
+
+    /// The graph background: a dark box with its four corner pixels cut, drawn without smoothing.
+    private static func pixelBox(_ box: NSRect) {
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current?.shouldAntialias = false
+        NSColor(white: 0.16, alpha: 1).setFill()
+        box.fill()
+        for corner in [NSPoint(x: box.minX, y: box.minY), NSPoint(x: box.maxX - 1, y: box.minY),
+                       NSPoint(x: box.minX, y: box.maxY - 1), NSPoint(x: box.maxX - 1, y: box.maxY - 1)] {
+            NSRect(origin: corner, size: NSSize(width: 1, height: 1)).fill(using: .clear)
+        }
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    /// A stepped line: one pixel per column, joined to the previous column by a vertical run.
+    private static func pixelLine(_ values: [Double], in box: NSRect, color: NSColor, capacity: Int) {
+        let cols = columns(values, count: Int(box.width), capacity: capacity)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current?.shouldAntialias = false
+        color.setFill()
+        var previous: Int?
+        for (col, value) in cols.enumerated() {
+            guard let value else { previous = nil; continue }
+            let y = row(value, height: Int(box.height))
+            let low = min(y, previous ?? y), high = max(y, previous ?? y)
+            NSRect(x: box.minX + CGFloat(col), y: box.minY + CGFloat(low), width: 1, height: CGFloat(high - low + 1)).fill()
+            previous = y
+        }
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    /// Solid one-point bars from the box bottom, one per column.
+    private static func pixelBars(_ values: [Double], in box: NSRect, color: NSColor, capacity: Int) {
+        let cols = columns(values, count: Int(box.width), capacity: capacity)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current?.shouldAntialias = false
+        color.setFill()
+        for (col, value) in cols.enumerated() {
+            guard let value else { continue }
+            let y = row(value, height: Int(box.height))
+            NSRect(x: box.minX + CGFloat(col), y: box.minY + 1, width: 1, height: CGFloat(y)).fill()
+        }
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
     /// One faint line per session (or per few sessions on a busy hour), so the height reads as a count.
     private static func drawGrid(top: Int, in box: NSRect) {
         let step = top <= 6 ? 1 : Int((Double(top) / 5).rounded(.up))
-        NSColor(white: 1, alpha: 0.13).setStroke()
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current?.shouldAntialias = false
+        NSColor(white: 0.24, alpha: 1).setFill()
         var level = step
         while level < top {
-            let y = (box.minY + 1 + CGFloat(level) / CGFloat(top) * (box.height - 2)).rounded() + 0.25
-            let line = NSBezierPath()
-            line.lineWidth = 0.5
-            line.move(to: NSPoint(x: box.minX + 1, y: y))
-            line.line(to: NSPoint(x: box.maxX - 1, y: y))
-            line.stroke()
+            let y = row(Double(level) / Double(top) * 100, height: Int(box.height))
+            // Dotted: every other point, so the grid reads as a scale and not as data.
+            var x = box.minX + 1
+            while x < box.maxX - 1 {
+                NSRect(x: x, y: box.minY + CGFloat(y), width: 1, height: 1).fill()
+                x += 2
+            }
             level += step
         }
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     private static func fillArea(_ values: [Double], in box: NSRect, color: NSColor) {
@@ -202,8 +268,9 @@ enum StatusImage {
         ])
     }
 
-    enum LabelStyle { case sidewaysPixel, uprightPixel, uprightText }
+    enum LabelStyle { case sidewaysPixel, uprightPixel, uprightText, uprightMono }
     static var labelStyle: LabelStyle = .uprightPixel
+    static var labelFace: PixelFace = .medium
 
     static let labelLight = NSColor(white: 0.95, alpha: 1)
     static let labelDark = NSColor(white: 0.16, alpha: 1)
@@ -217,12 +284,34 @@ enum StatusImage {
                                                   inset: Int(labelInset))
             PixelFont.draw(points, light: labelLight, outline: labelDark)
         case .uprightPixel:
-            let points = PixelFont7.topLeftPoints(text, left: box.minX + 2, top: box.maxY - 1, maxWidth: box.width - 4)
+            let points = labelFace.topLeftPoints(text, left: box.minX + 2, top: box.maxY - 1, maxWidth: box.width - 4)
             PixelFont.draw(points, light: labelLight, outline: labelDark)
-        case .uprightText:
-            let string = outlined(text.uppercased(), font: NSFont.systemFont(ofSize: 8, weight: .bold))
-            string.draw(at: NSPoint(x: box.minX + 2, y: box.maxY - string.size().height))
+        case .uprightText, .uprightMono:
+            drawCrisp(text.uppercased(), at: NSPoint(x: box.minX + 1.5, y: box.maxY - 1.5), anchorRight: false)
         }
+    }
+
+    static var crispFont: NSFont {
+        labelStyle == .uprightMono
+            ? NSFont.monospacedSystemFont(ofSize: 8.5, weight: .bold)
+            : NSFont.systemFont(ofSize: 9, weight: .semibold)
+    }
+
+    /// Native-resolution text on a small dark patch (no outline stroke), its top edge at `point.y`
+    /// and its left (or right) edge at `point.x`, snapped to the Retina pixel grid.
+    private static func drawCrisp(_ text: String, at point: NSPoint, anchorRight: Bool) {
+        let string = NSAttributedString(string: text, attributes: [.font: crispFont, .foregroundColor: labelLight, .kern: 0.3])
+        let size = string.size()
+        let capTop = crispFont.ascender - crispFont.capHeight  // empty space above capitals
+        var x = anchorRight ? point.x - size.width : point.x
+        var y = point.y - size.height + capTop
+        x = (x * 2).rounded() / 2
+        y = (y * 2).rounded() / 2
+        let patch = NSRect(x: x - 1, y: y - crispFont.descender - 1, width: size.width + 2,
+                           height: crispFont.capHeight + 2)
+        labelDark.withAlphaComponent(0.9).setFill()
+        NSBezierPath(roundedRect: patch, xRadius: 1.5, yRadius: 1.5).fill()
+        string.draw(at: NSPoint(x: x, y: y))
     }
 
     /// The work graph's top value in its top-right corner, in the label style.
@@ -232,11 +321,10 @@ enum StatusImage {
             PixelFont.draw(PixelFont.cornerPoints(text, right: box.maxX - 2, top: box.maxY - 1),
                            light: labelLight, outline: labelDark)
         case .uprightPixel:
-            PixelFont.draw(PixelFont7.topRightPoints(text, right: box.maxX - 2, top: box.maxY - 1),
+            PixelFont.draw(labelFace.topRightPoints(text, right: box.maxX - 2, top: box.maxY - 1),
                            light: labelLight, outline: labelDark)
-        case .uprightText:
-            let string = outlined(text, font: NSFont.monospacedDigitSystemFont(ofSize: 8, weight: .bold))
-            string.draw(at: NSPoint(x: box.maxX - 2 - string.size().width, y: box.maxY - string.size().height))
+        case .uprightText, .uprightMono:
+            drawCrisp(text, at: NSPoint(x: box.maxX - 1.5, y: box.maxY - 1.5), anchorRight: true)
         }
     }
 }

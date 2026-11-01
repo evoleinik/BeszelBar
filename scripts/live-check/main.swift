@@ -64,6 +64,11 @@ expect(edgeBright == 0, "letters reach the left edge (\(edgeBright) bright pixel
 expect(innerBright > 3, "label drawn inside the graph (\(innerBright) bright pixels)")
 expect(PixelFont.length(4) <= Int(StatusImage.height) - 2, "WORK fits the height")
 expect(PixelFont.glyphs.values.allSatisfy { $0.count == 5 && $0.allSatisfy { $0.count == 3 } }, "every glyph is 3x5")
+for face in [PixelFace.medium, PixelFace.large] {
+    expect(face.glyphs.values.allSatisfy { g in g.count == face.height && Set(g.map(\.count)).count == 1 },
+           "every \(face.width)x\(face.height) glyph has \(face.height) rows of one width")
+    expect(Set(PixelFace.large.glyphs.keys) == Set(face.glyphs.keys), "\(face.width)x\(face.height) has the same characters")
+}
 let vert = PixelFont.verticalPoints("box", left: 10, midY: 10, height: 20, inset: 1)
 expect(vert.map(\.0).min() == 11 && vert.map(\.0).max() == 15, "vertical label columns \(vert.map(\.0).min()!)...\(vert.map(\.0).max()!)")
 expect(Set(vert.map(\.1)).count > 5, "vertical label runs up the edge")
@@ -92,6 +97,25 @@ expect(calm.map(\.1) == [false, false] && busy.map(\.1) == [true, false], "pill 
 expect(busy.map { $0.0.string } == ["2N", "18T"], "letters \(busy.map { $0.0.string })")
 expect(StatusImage.attentionWidth(StatusCounts(working: 0, needsYou: 1, yourTurn: 18, stale: 0)) <= 64,
        "attention width \(StatusImage.attentionWidth(StatusCounts(working: 0, needsYou: 1, yourTurn: 18, stale: 0)))")
+
+// Pixel graphs: columns map newest to the right edge; rows stay inside the box.
+let cols = StatusImage.columns([10, 20, 30], count: 34, capacity: 60)
+expect(cols.last! == 30 && cols.first! == nil, "newest value at the right edge, older columns empty")
+expect(StatusImage.row(0, height: 20) == 1 && StatusImage.row(100, height: 20) == 18, "rows 1...18 in a 20 pt box")
+let lineProbe = StatusImage.make([StatusGraph(label: "", cpu: Array(repeating: 30, count: 60), mem: Array(repeating: 70, count: 60))],
+                                 work: nil, counts: nil, appearance: NSAppearance(named: .darkAqua)!)
+let lineRep = NSBitmapImageRep(data: lineProbe.tiffRepresentation!)!
+var lineShades = Set<String>()
+for y in 0..<lineRep.pixelsHigh { for x in (lineRep.pixelsWide / 2)..<(lineRep.pixelsWide - 1) {
+    if let c = lineRep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) {
+        lineShades.insert("\(Int(c.redComponent * 20)),\(Int(c.greenComponent * 20)),\(Int(c.blueComponent * 20))")
+    }
+} }
+expect(lineShades.count <= 3, "graph area has \(lineShades.count) colours; lines must be unsmoothed (box, CPU, RAM only)")
+
+// Proportional: a wide W takes more room than a narrow I.
+expect(PixelFace.medium.length("W") == 5 && PixelFace.medium.length("I") == 3, "proportional widths")
+expect(PixelFace.medium.length("BOX") == 4 + 1 + 4 + 1 + 4, "BOX width \(PixelFace.medium.length("BOX"))")
 
 if failures == 0 { print("ok") }
 exit(failures == 0 ? 0 : 1)
