@@ -15,6 +15,14 @@ enum Sparkline {
     }
 }
 
+/// Scales working-session counts to the graph: the top is at least 5 sessions, or the hour's peak.
+enum WorkScale {
+    static func percent(_ counts: [Double]) -> [Double] {
+        let top = max(5, counts.max() ?? 0)
+        return counts.map { $0 / top * 100 }
+    }
+}
+
 /// Session counts by status, summed across machines.
 struct StatusCounts: Equatable {
     var working = 0
@@ -45,7 +53,10 @@ enum StatusImage {
     static let needsYouColor = NSColor(srgbRed: 0.94, green: 0.62, blue: 0.15, alpha: 1)
     static let yourTurnColor = NSColor(srgbRed: 0.39, green: 0.60, blue: 0.13, alpha: 1)
     static let staleColor = NSColor(srgbRed: 0.53, green: 0.53, blue: 0.50, alpha: 1)
-    static let countFont = NSFont.monospacedDigitSystemFont(ofSize: 5.5, weight: .semibold)
+    static let workColor = NSColor(srgbRed: 0.50, green: 0.47, blue: 0.87, alpha: 1)
+    static let bigFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
+    static let letterFont = NSFont.systemFont(ofSize: 7.5, weight: .semibold)
+    static let workCapacity = 60  // one point per minute: the last hour
     static let cpuColor = NSColor(srgbRed: 0.52, green: 0.72, blue: 0.92, alpha: 1)
     static let memColor = NSColor(srgbRed: 0.59, green: 0.77, blue: 0.35, alpha: 1)
 
@@ -54,17 +65,28 @@ enum StatusImage {
         return CGFloat(count) * (labelWidth + graphWidth) + CGFloat(count - 1) * spacing
     }
 
-    /// Width of the four stacked session counts: a dot, then the widest number.
-    static func countsWidth(_ counts: StatusCounts) -> CGFloat {
-        let widest = counts.values.map { NSAttributedString(string: "\($0)", attributes: [.font: countFont]).size().width }.max() ?? 0
-        return 3 + 1.5 + widest.rounded(.up)
+    /// "1N" and "18T": the two counts that ask something of you. N sits in an amber pill above zero.
+    static func attention(_ counts: StatusCounts) -> [(NSAttributedString, Bool)] {
+        func pair(_ value: Int, _ letter: String, _ color: NSColor) -> NSAttributedString {
+            let text = NSMutableAttributedString(string: "\(value)", attributes: [.font: bigFont, .foregroundColor: color])
+            text.append(NSAttributedString(string: letter, attributes: [.font: letterFont, .foregroundColor: color]))
+            return text
+        }
+        let needsColor = counts.needsYou > 0 ? NSColor(srgbRed: 0.25, green: 0.14, blue: 0.01, alpha: 1) : .secondaryLabelColor
+        return [(pair(counts.needsYou, "N", needsColor), counts.needsYou > 0),
+                (pair(counts.yourTurn, "T", .labelColor), false)]
     }
 
-    static func make(_ graphs: [StatusGraph], counts: StatusCounts?, appearance: NSAppearance) -> NSImage {
+    static func attentionWidth(_ counts: StatusCounts) -> CGFloat {
+        attention(counts).reduce(0) { $0 + $1.0.size().width.rounded(.up) + 8 }
+    }
+
+    static func make(_ graphs: [StatusGraph], work: [Double]?, counts: StatusCounts?, appearance: NSAppearance) -> NSImage {
         let height = Self.height
-        let graphsWidth = width(for: graphs.count)
-        let countsGap: CGFloat = graphs.isEmpty ? 0 : spacing
-        let total = graphsWidth + (counts.map { countsGap + countsWidth($0) } ?? 0)
+        let machines = width(for: graphs.count)
+        let workWidth: CGFloat = work == nil ? 0 : (machines > 0 ? spacing : 0) + labelWidth + graphWidth
+        let countsX = machines + workWidth + ((machines + workWidth) > 0 && counts != nil ? spacing : 0)
+        let total = countsX + (counts.map { attentionWidth($0) } ?? 0)
         let image = NSImage(size: NSSize(width: total, height: height), flipped: false) { _ in
             appearance.performAsCurrentDrawingAppearance {
                 var x: CGFloat = 0
@@ -77,14 +99,47 @@ enum StatusImage {
                     stroke(graph.cpu, in: box, color: cpuColor)
                     x += labelWidth + graphWidth + spacing
                 }
+                if let work {
+                    let start = machines > 0 ? machines + spacing : 0
+                    let box = NSRect(x: start + labelWidth, y: 0, width: graphWidth, height: height)
+                    drawLabel("work", beside: box)
+                    NSColor(white: 0.16, alpha: 1).setFill()
+                    NSBezierPath(roundedRect: box, xRadius: 2, yRadius: 2).fill()
+                    fillArea(WorkScale.percent(work), in: box, color: workColor)
+                }
                 if let counts {
-                    drawCounts(counts, at: graphsWidth + countsGap, height: height)
+                    var cx = countsX
+                    for (text, pill) in attention(counts) {
+                        let size = text.size()
+                        let w = size.width.rounded(.up) + 6
+                        if pill {
+                            needsYouColor.setFill()
+                            NSBezierPath(roundedRect: NSRect(x: cx, y: (height - 15) / 2, width: w, height: 15),
+                                         xRadius: 4, yRadius: 4).fill()
+                        }
+                        text.draw(at: NSPoint(x: cx + 3, y: (height - size.height) / 2))
+                        cx += w + 2
+                    }
                 }
             }
             return true
         }
         image.isTemplate = false
         return image
+    }
+
+    private static func fillArea(_ values: [Double], in box: NSRect, color: NSColor) {
+        let points = Sparkline.points(values, width: box.width, height: box.height, capacity: workCapacity)
+        guard points.count > 1 else { return }
+        let path = NSBezierPath()
+        path.move(to: NSPoint(x: box.minX + points[0].x, y: box.minY + 1))
+        for point in points {
+            path.line(to: NSPoint(x: box.minX + point.x, y: box.minY + point.y))
+        }
+        path.line(to: NSPoint(x: box.minX + points[points.count - 1].x, y: box.minY + 1))
+        path.close()
+        color.withAlphaComponent(0.85).setFill()
+        path.fill()
     }
 
     private static func stroke(_ values: [Double], in box: NSRect, color: NSColor) {
@@ -99,25 +154,6 @@ enum StatusImage {
         }
         color.setStroke()
         path.stroke()
-    }
-
-    /// Four rows, top to bottom: working, needs you, your turn, stale. Each is a coloured dot and a count.
-    private static func drawCounts(_ counts: StatusCounts, at x: CGFloat, height: CGFloat) {
-        let rowHeight = height / 4
-        let rows: [(Int, NSColor, NSColor)] = [
-            (counts.working, workingColor, .labelColor),
-            (counts.needsYou, needsYouColor, counts.needsYou > 0 ? needsYouColor : .secondaryLabelColor),
-            (counts.yourTurn, yourTurnColor, .labelColor),
-            (counts.stale, staleColor, .secondaryLabelColor),
-        ]
-        for (index, (value, dotColor, textColor)) in rows.enumerated() {
-            let midY = height - (CGFloat(index) + 0.5) * rowHeight
-            dotColor.setFill()
-            NSBezierPath(ovalIn: NSRect(x: x, y: midY - 1.3, width: 2.6, height: 2.6)).fill()
-            let text = NSAttributedString(string: "\(value)", attributes: [.font: countFont, .foregroundColor: textColor])
-            let size = text.size()
-            text.draw(at: NSPoint(x: x + 3 + 1.5, y: midY - size.height / 2))
-        }
     }
 
     /// The name turned a quarter turn anticlockwise, reading bottom to top, centred on the graph's

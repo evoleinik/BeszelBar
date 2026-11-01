@@ -23,6 +23,13 @@ enum NeedsYouReason: String, CaseIterable {
     }
 }
 
+/// A session waiting on you in some way, named as agent-exporter named it.
+struct NamedSession: Equatable, Identifiable {
+    let name: String
+    let seconds: Int
+    var id: String { name }
+}
+
 struct WaitingSession: Equatable, Identifiable {
     let name: String
     let reason: NeedsYouReason
@@ -38,6 +45,7 @@ struct AgentStats: Equatable {
     var yourTurn = 0
     var stale = 0
     var needsYouSessions: [WaitingSession] = []
+    var yourTurnSessions: [NamedSession] = []
     var sessions = 0
     var sessionBytes = 0.0
     var staleBytes = 0.0
@@ -49,6 +57,12 @@ struct AgentStats: Equatable {
     var total: Int { working + needsYou + yourTurn + stale }
 
     static let needsYouPrefix = "agent_needs_you_session_seconds_"
+    static let yourTurnPrefix = "agent_your_turn_session_seconds_"
+
+    /// Beszel turns every run of separators in a label value into "_"; show them as spaces.
+    static func displayName(_ keyTail: Substring) -> String {
+        keyTail.split(separator: "_").joined(separator: " ")
+    }
 
     /// Returns nil when the record holds no agent-exporter series.
     static func parse(_ stats: [String: Double]) -> AgentStats? {
@@ -69,8 +83,11 @@ struct AgentStats: Equatable {
                 let tail = key.dropFirst(needsYouPrefix.count)
                 guard let cut = tail.firstIndex(of: "_"),
                       let reason = NeedsYouReason(rawValue: String(tail[..<cut])) else { continue }
-                let name = String(tail[tail.index(after: cut)...]).replacingOccurrences(of: "_", with: "-")
+                let name = displayName(tail[tail.index(after: cut)...])
                 s.needsYouSessions.append(WaitingSession(name: name, reason: reason, seconds: Int(value.rounded())))
+            } else if key.hasPrefix(yourTurnPrefix) {
+                s.yourTurnSessions.append(NamedSession(name: displayName(key.dropFirst(yourTurnPrefix.count)),
+                                                       seconds: Int(value.rounded())))
             } else if key.hasPrefix("agent_processes_") {
                 s.sessions += Int(value.rounded())
             } else if key.hasPrefix("agent_memory_bytes_") {
@@ -78,6 +95,7 @@ struct AgentStats: Equatable {
             }
         }
         s.needsYouSessions.sort { ($0.seconds, $1.name) > ($1.seconds, $0.name) }
+        s.yourTurnSessions.sort { ($0.seconds, $1.name) > ($1.seconds, $0.name) }
         if let up = stats["ollama_up"] {
             s.ollamaUp = up >= 1
             s.ollamaModels = stats["ollama_models_loaded"].map { Int($0.rounded()) }

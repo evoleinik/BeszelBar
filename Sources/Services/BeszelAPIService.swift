@@ -263,6 +263,20 @@ final class BeszelAPIService: @unchecked Sendable {
         }
     }
 
+    /// The last `limit` one-minute custom metrics rows for a system, newest first.
+    func fetchCustomStatsHistory(systemID: String, limit: Int) async throws -> [CustomStatsRecord] {
+        guard var components = URLComponents(string: instance.url) else { throw URLError(.badURL) }
+        components.path = "/api/collections/custom_stats/records"
+        components.queryItems = [
+            URLQueryItem(name: "perPage", value: String(limit)),
+            URLQueryItem(name: "sort", value: "-created"),
+            URLQueryItem(name: "filter", value: "system = '\(systemID)' && type = '1m'")
+        ]
+        guard let url = components.url else { throw URLError(.badURL) }
+        let response: PocketBaseListResponse<CustomStatsRecord> = try await performRequest(with: url)
+        return response.items
+    }
+
     private func fetchAllPages<T: Codable>(path: String, filter: String?) async throws -> [T] {
         var allItems: [T] = []
         var currentPage = 1

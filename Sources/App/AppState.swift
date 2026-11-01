@@ -23,6 +23,10 @@ final class AppState {
             c.stale += s.stale
         }
     }
+
+    /// Working sessions per minute over the last hour, summed across systems, oldest first.
+    var workHistory: [Double] = []
+    private var workHistoryKey = ""
     var isLoading = false
     var errorMessage: String?
     var isConfigured = false
@@ -156,15 +160,32 @@ final class AppState {
         agentTask = Task {
             let service = getOrCreateService(for: instance)
             var mapped: [String: AgentStats] = [:]
+            var latest: [String] = []
             for id in systemIDs {
                 guard !Task.isCancelled else { return }
                 if let record = try? await service.fetchLatestCustomStats(systemID: id),
                    let stats = AgentStats.parse(record.stats) {
                     mapped[id] = stats
+                    latest.append(id + "@" + (record.created ?? ""))
                 }
             }
             guard !Task.isCancelled else { return }
             if mapped != agentStats { agentStats = mapped }
+            // Refetch the hour of history only when a new minute has been stored.
+            let key = latest.sorted().joined(separator: ",")
+            if key != workHistoryKey {
+                var perMinute: [String: Double] = [:]
+                for id in mapped.keys {
+                    let rows = (try? await service.fetchCustomStatsHistory(systemID: id, limit: 60)) ?? []
+                    for row in rows {
+                        let minute = String((row.created ?? "").prefix(16))
+                        perMinute[minute, default: 0] += row.stats["agent_sessions_working"] ?? 0
+                    }
+                }
+                guard !Task.isCancelled else { return }
+                workHistoryKey = key
+                workHistory = perMinute.keys.sorted().suffix(60).map { perMinute[$0] ?? 0 }
+            }
         }
     }
 

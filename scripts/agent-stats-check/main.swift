@@ -13,6 +13,8 @@ let sample: [String: Double] = [
     "agent_needs_you_session_seconds_input_dmarc_reports_mail": 3798,
     "agent_needs_you_session_seconds_question_api_keys_gitignore": 22,
     "agent_needs_you_session_seconds_bogus_x": 5,
+    "agent_your_turn_session_seconds_Azure_spending_discussion": 77_000,
+    "agent_your_turn_session_seconds_dmarc_reports_mail": 3_600,
     "agent_processes_claude": 131, "agent_processes_codex": 1,
     "agent_memory_bytes_claude": 25_000_000_000, "agent_memory_bytes_codex": 100_000_000,
     "agent_stale_memory_bytes": 17_700_000_000,
@@ -22,7 +24,9 @@ let sample: [String: Double] = [
 if let s = AgentStats.parse(sample) {
     expect((s.working, s.needsYou, s.yourTurn, s.stale) == (3, 2, 21, 106), "statuses")
     expect(s.total == 132 && s.sessions == 132, "four statuses sum to the sessions: \(s.total) vs \(s.sessions)")
-    expect(s.needsYouSessions.map(\.name) == ["dmarc-reports-mail", "api-keys-gitignore"],
+    expect(s.yourTurnSessions.map(\.name) == ["Azure spending discussion", "dmarc reports mail"],
+           "your-turn names oldest first: \(s.yourTurnSessions.map(\.name))")
+    expect(s.needsYouSessions.map(\.name) == ["dmarc reports mail", "api keys gitignore"],
            "names longest first, unknown reasons dropped: \(s.needsYouSessions.map(\.name))")
     expect(s.needsYouSessions.map(\.reason) == [.input, .question], "reasons")
     expect(s.staleBytes == 17_700_000_000 && s.sessionBytes == 25_100_000_000, "memory")

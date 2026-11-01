@@ -43,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         _ = AppState.shared.systemDetails
                         _ = AppState.shared.containers
                         _ = AppState.shared.agentStats
+                        _ = AppState.shared.workHistory
                     } onChange: {
                         continuation.resume()
                     }
@@ -75,12 +76,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let points = live[system.id] ?? []
             return StatusGraph(label: system.name.lowercased(), cpu: points.map(\.cpu), mem: points.map(\.mem))
         }
+        let work: [Double]? = counts == nil || appState.workHistory.isEmpty ? nil : appState.workHistory
         if graphs.isEmpty && counts == nil {
             button.image = NSImage(systemSymbolName: alertCount > 0 ? "server.rack.fill" : "server.rack",
                                    accessibilityDescription: "BeszelBar")
             button.image?.size = NSSize(width: 18, height: 18)
         } else {
-            button.image = StatusImage.make(graphs, counts: counts, appearance: button.effectiveAppearance)
+            button.image = StatusImage.make(graphs, work: work, counts: counts, appearance: button.effectiveAppearance)
         }
         button.attributedTitle = StatusTitle.make(alerts: alertCount)
         var tip = systems.compactMap { system -> String? in
@@ -88,7 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return "\(system.name) CPU \(Int(last.cpu.rounded()))% RAM \(Int(last.mem.rounded()))%"
         }
         if let c = counts {
-            tip.append("Working \(c.working) · Needs you \(c.needsYou) · Your turn \(c.yourTurn) · Stale \(c.stale)")
+            tip.append("Needs you \(c.needsYou) · Your turn \(c.yourTurn) · Working \(c.working) · Stale \(c.stale)")
         }
         button.toolTip = tip.isEmpty ? nil : tip.joined(separator: "\n")
     }

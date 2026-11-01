@@ -47,11 +47,17 @@ for (t, cpu) in [(0.0, 10.0), (1, 20), (2, 30), (3, 40), (4, 50), (5, 60), (6, 7
 }
 expect(averaged == [LivePoint(cpu: 35, mem: 50)], "averaged \(averaged)")
 
-// Counts column: drawn after the graphs, as wide as a dot plus the widest number.
-let counts = StatusCounts(working: 3, needsYou: 1, yourTurn: 21, stale: 106)
-expect(StatusImage.countsWidth(counts) > StatusImage.countsWidth(StatusCounts(working: 1, needsYou: 0, yourTurn: 2, stale: 3)),
-       "a three-digit count makes the column wider")
-expect(StatusImage.countsWidth(counts) <= 18, "counts column \(StatusImage.countsWidth(counts)) pt")
+// Work graph: counts scale to at least 5 sessions, or the hour's peak.
+expect(WorkScale.percent([1, 2, 5]) == [20, 40, 100], "work scale \(WorkScale.percent([1, 2, 5]))")
+expect(WorkScale.percent([2, 10]) == [20, 100], "work scale peak")
+
+// Attention: N gets a pill only above zero; more digits take more room.
+let calm = StatusImage.attention(StatusCounts(working: 3, needsYou: 0, yourTurn: 4, stale: 9))
+let busy = StatusImage.attention(StatusCounts(working: 3, needsYou: 2, yourTurn: 18, stale: 9))
+expect(calm.map(\.1) == [false, false] && busy.map(\.1) == [true, false], "pill only when something needs you")
+expect(busy.map { $0.0.string } == ["2N", "18T"], "letters \(busy.map { $0.0.string })")
+expect(StatusImage.attentionWidth(StatusCounts(working: 0, needsYou: 1, yourTurn: 18, stale: 0)) <= 56,
+       "attention width \(StatusImage.attentionWidth(StatusCounts(working: 0, needsYou: 1, yourTurn: 18, stale: 0)))")
 
 if failures == 0 { print("ok") }
 exit(failures == 0 ? 0 : 1)
