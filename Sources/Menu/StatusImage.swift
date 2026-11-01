@@ -66,8 +66,9 @@ enum StatusImage {
                                  NSColor(srgbRed: 0xB3 / 255, green: 0x26 / 255, blue: 0x1E / 255, alpha: 1)]
 
     static func memColor(_ level: Double?) -> NSColor {
-        guard let level, level >= 0 else { return memAreaColor }
-        return pressureColors[min(pressureColors.count - 1, Int(level.rounded()))]
+        guard let level, level.isFinite, level >= 0 else { return memAreaColor }
+        // Clamp before Int(): a huge value from a stray .prom file would otherwise trap.
+        return pressureColors[Int(min(level, Double(pressureColors.count - 1)).rounded())]
     }
     static let boxColor = NSColor(white: 0.16, alpha: 1)
 

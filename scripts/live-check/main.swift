@@ -160,6 +160,10 @@ expect(same(pixel(rising, 30, 3), StatusImage.pressureColors[2]), "new columns r
 let noData = StatusImage.make([StatusGraph(label: "", cpu: Array(repeating: 100, count: 60), mem: Array(repeating: 80, count: 60))],
                               work: nil, counts: nil, appearance: NSAppearance(named: .darkAqua)!)
 expect(same(pixel(noData, 30, 3), StatusImage.memAreaColor), "no pressure data draws grey, got \(pixel(noData, 30, 3))")
+// Out-of-range pressure never traps: huge values clamp to critical, NaN and negatives draw grey.
+expect(StatusImage.memColor(1e300) === StatusImage.pressureColors[2] && StatusImage.memColor(.infinity) === StatusImage.memColor(.nan),
+       "out-of-range pressure")
+expect(StatusImage.memColor(.nan) === StatusImage.memAreaColor && StatusImage.memColor(-1) === StatusImage.memAreaColor, "NaN and negative are grey")
 
 // Proportional: a wide W takes more room than a narrow I.
 expect(PixelFace.medium.length("W") == 5 && PixelFace.medium.length("I") == 3, "proportional widths")
