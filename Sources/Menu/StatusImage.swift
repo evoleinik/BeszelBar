@@ -17,9 +17,12 @@ enum Sparkline {
 
 /// Scales working-session counts to the graph: the top is at least 5 sessions, or the hour's peak.
 enum WorkScale {
+    /// The graph's top, in sessions: at least 5, or the hour's peak rounded up.
+    static func top(_ counts: [Double]) -> Int { max(5, Int((counts.max() ?? 0).rounded(.up))) }
+
     static func percent(_ counts: [Double]) -> [Double] {
-        let top = max(5, counts.max() ?? 0)
-        return counts.map { $0 / top * 100 }
+        let t = Double(top(counts))
+        return counts.map { $0 / t * 100 }
     }
 }
 
@@ -48,14 +51,15 @@ enum StatusImage {
     static let labelFont = NSFont.systemFont(ofSize: 9, weight: .medium)
     static let labelGap: CGFloat = 1.5  // from the name's baseline to its graph
     static var labelWidth: CGFloat { (labelGap + labelFont.ascender).rounded(.up) }
-    static let spacing: CGFloat = 6     // between one machine's graph and the next name
+    static let spacing: CGFloat = 3     // between one graph and the next name
     static let workingColor = NSColor(srgbRed: 0.22, green: 0.54, blue: 0.87, alpha: 1)
     static let needsYouColor = NSColor(srgbRed: 0.94, green: 0.62, blue: 0.15, alpha: 1)
     static let yourTurnColor = NSColor(srgbRed: 0.39, green: 0.60, blue: 0.13, alpha: 1)
     static let staleColor = NSColor(srgbRed: 0.53, green: 0.53, blue: 0.50, alpha: 1)
     static let workColor = NSColor(srgbRed: 0.50, green: 0.47, blue: 0.87, alpha: 1)
-    static let bigFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
-    static let letterFont = NSFont.systemFont(ofSize: 7.5, weight: .semibold)
+    static let bigFont = NSFont.monospacedDigitSystemFont(ofSize: 14, weight: .semibold)
+    static let letterFont = NSFont.systemFont(ofSize: 9, weight: .semibold)
+    static let scaleFont = NSFont.monospacedDigitSystemFont(ofSize: 6, weight: .medium)
     static let workCapacity = 60  // one point per minute: the last hour
     static let cpuColor = NSColor(srgbRed: 0.52, green: 0.72, blue: 0.92, alpha: 1)
     static let memColor = NSColor(srgbRed: 0.59, green: 0.77, blue: 0.35, alpha: 1)
@@ -105,7 +109,11 @@ enum StatusImage {
                     drawLabel("work", beside: box)
                     NSColor(white: 0.16, alpha: 1).setFill()
                     NSBezierPath(roundedRect: box, xRadius: 2, yRadius: 2).fill()
+                    drawGrid(top: WorkScale.top(work), in: box)
                     fillArea(WorkScale.percent(work), in: box, color: workColor)
+                    let label = NSAttributedString(string: "\(WorkScale.top(work))", attributes: [
+                        .font: scaleFont, .foregroundColor: NSColor(white: 1, alpha: 0.75)])
+                    label.draw(at: NSPoint(x: box.minX + 1.5, y: box.maxY - label.size().height))
                 }
                 if let counts {
                     var cx = countsX
@@ -114,7 +122,7 @@ enum StatusImage {
                         let w = size.width.rounded(.up) + 6
                         if pill {
                             needsYouColor.setFill()
-                            NSBezierPath(roundedRect: NSRect(x: cx, y: (height - 15) / 2, width: w, height: 15),
+                            NSBezierPath(roundedRect: NSRect(x: cx, y: 1, width: w, height: height - 2),
                                          xRadius: 4, yRadius: 4).fill()
                         }
                         text.draw(at: NSPoint(x: cx + 3, y: (height - size.height) / 2))
@@ -126,6 +134,22 @@ enum StatusImage {
         }
         image.isTemplate = false
         return image
+    }
+
+    /// One faint line per session (or per few sessions on a busy hour), so the height reads as a count.
+    private static func drawGrid(top: Int, in box: NSRect) {
+        let step = top <= 6 ? 1 : Int((Double(top) / 5).rounded(.up))
+        NSColor(white: 1, alpha: 0.13).setStroke()
+        var level = step
+        while level < top {
+            let y = (box.minY + 1 + CGFloat(level) / CGFloat(top) * (box.height - 2)).rounded() + 0.25
+            let line = NSBezierPath()
+            line.lineWidth = 0.5
+            line.move(to: NSPoint(x: box.minX + 1, y: y))
+            line.line(to: NSPoint(x: box.maxX - 1, y: y))
+            line.stroke()
+            level += step
+        }
     }
 
     private static func fillArea(_ values: [Double], in box: NSRect, color: NSColor) {
