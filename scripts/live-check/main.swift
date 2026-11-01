@@ -142,8 +142,14 @@ expect(brightness(StatusImage.memAreaColor) - brightness(StatusImage.boxColor) >
        "RAM area too close to the box background (\(brightness(StatusImage.memAreaColor)) vs \(brightness(StatusImage.boxColor)))")
 expect(brightness(StatusImage.cpuColor) - brightness(StatusImage.memAreaColor) >= 0.4,
        "CPU line too close to the RAM area (\(brightness(StatusImage.cpuColor)) vs \(brightness(StatusImage.memAreaColor)))")
+// Pressure fills are dark on purpose; their hue sets them apart from the box, so measure RGB distance.
+func distance(_ a: NSColor, _ b: NSColor) -> CGFloat {
+    let a = a.usingColorSpace(.sRGB)!, b = b.usingColorSpace(.sRGB)!
+    return sqrt(pow(a.redComponent - b.redComponent, 2) + pow(a.greenComponent - b.greenComponent, 2)
+                + pow(a.blueComponent - b.blueComponent, 2))
+}
 for color in StatusImage.pressureColors {
-    expect(brightness(color) - brightness(StatusImage.boxColor) >= 0.2, "pressure colour \(color) too close to the box")
+    expect(distance(color, StatusImage.boxColor) >= 0.12, "pressure colour \(color) too close to the box")
     expect(brightness(StatusImage.cpuColor) - brightness(color) >= 0.25, "CPU line too close to pressure colour \(color)")
 }
 // Each RAM column takes its pressure colour: green while normal, red once critical, grey with no data.

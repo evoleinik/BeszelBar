@@ -76,9 +76,10 @@ enum StatusImage {
     static let cpuColor = NSColor(srgbRed: 0x6C / 255, green: 0xD4 / 255, blue: 0xFF / 255, alpha: 1)  // cyan line
     static let memAreaColor = NSColor(srgbRed: 0x6E / 255, green: 0x6E / 255, blue: 0x6E / 255, alpha: 1) // no pressure data
     /// The RAM area's colour by memory pressure, as Activity Monitor does: normal, warning, critical.
-    static let pressureColors = [NSColor(srgbRed: 0x1F / 255, green: 0x7A / 255, blue: 0x3A / 255, alpha: 1),
-                                 NSColor(srgbRed: 0xB0 / 255, green: 0x7A / 255, blue: 0x00 / 255, alpha: 1),
-                                 NSColor(srgbRed: 0xB3 / 255, green: 0x26 / 255, blue: 0x1E / 255, alpha: 1)]
+    /// Dark and muted, so the bright CPU line stands out on every one.
+    static let pressureColors = [NSColor(srgbRed: 0x21 / 255, green: 0x4A / 255, blue: 0x2C / 255, alpha: 1),
+                                 NSColor(srgbRed: 0x5A / 255, green: 0x47 / 255, blue: 0x14 / 255, alpha: 1),
+                                 NSColor(srgbRed: 0x5C / 255, green: 0x21 / 255, blue: 0x1C / 255, alpha: 1)]
 
     static func memColor(_ level: Double?) -> NSColor {
         guard let level, level.isFinite, level >= 0 else { return memAreaColor }
