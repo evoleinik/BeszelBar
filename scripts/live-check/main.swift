@@ -27,13 +27,6 @@ let message = #"{"stats":{"cpu":72.55,"mp":66.51,"m":62.7},"info":{"h":"box"},"c
 expect(LivePoint.decode(message) == LivePoint(cpu: 72.55, mem: 66.51), "decode")
 expect(LivePoint.decode(#"{"info":{}}"#) == nil, "message without stats must be nil")
 
-// Geometry: newest point at the right edge, values clamped to the box.
-let pts = Sparkline.points([10, 150, -5], width: 40, height: 16, capacity: 60)
-let step = 40.0 / 59.0
-expect(pts.count == 3, "count")
-expect(abs(pts[2].x - 40) < 0.001 && abs(pts[0].x - (40 - 2 * step)) < 0.001, "x \(pts.map(\.x))")
-expect(pts[1].y == 15 && pts[2].y == 1, "clamp \(pts.map(\.y))")
-expect(Sparkline.points(Array(repeating: 5, count: 90), width: 40, height: 16, capacity: 60).count == 60, "capacity")
 expect(StatusImage.width(for: 2) == 2 * StatusImage.graphWidth + StatusImage.spacing,
        "width \(StatusImage.width(for: 2))")
 // Names inside the graph: render one graph and check the letters never reach the box's edge
@@ -62,17 +55,9 @@ for y in 2..<(rep.pixelsHigh - 2) {
 expect(shades.count <= 2, "label area has \(shades.count) shades; antialiasing must be off (only light and outline)")
 expect(edgeBright == 0, "letters reach the left edge (\(edgeBright) bright pixels in column 0)")
 expect(innerBright > 3, "label drawn inside the graph (\(innerBright) bright pixels)")
-expect(PixelFont.length(4) <= Int(StatusImage.height) - 2, "WORK fits the height")
-expect(PixelFont.glyphs.values.allSatisfy { $0.count == 5 && $0.allSatisfy { $0.count == 3 } }, "every glyph is 3x5")
-for face in [PixelFace.medium, PixelFace.large] {
-    expect(face.glyphs.values.allSatisfy { g in g.count == face.height && Set(g.map(\.count)).count == 1 },
-           "every \(face.width)x\(face.height) glyph has \(face.height) rows of one width")
-    expect(Set(PixelFace.large.glyphs.keys) == Set(face.glyphs.keys), "\(face.width)x\(face.height) has the same characters")
-}
-let vert = PixelFont.verticalPoints("box", left: 10, midY: 10, height: 20, inset: 1)
-expect(vert.map(\.0).min() == 11 && vert.map(\.0).max() == 15, "vertical label columns \(vert.map(\.0).min()!)...\(vert.map(\.0).max()!)")
-expect(Set(vert.map(\.1)).count > 5, "vertical label runs up the edge")
-expect(PixelFont.verticalPoints("averylongname", left: 0, midY: 10, height: 20, inset: 1).map(\.1).max()! < 20, "long names truncate to fit")
+let face = StatusImage.labelFace
+expect(face.glyphs.values.allSatisfy { g in g.count == face.height && Set(g.map { $0.count }).count == 1 },
+       "every \(face.width)x\(face.height) glyph has \(face.height) rows of one width")
 expect(StatusImage.height >= 16, "height \(StatusImage.height)")
 
 // Averaging: one point per 5-second window, the mean of its readings.
@@ -95,8 +80,26 @@ let calm = StatusImage.attention(StatusCounts(working: 3, needsYou: 0, yourTurn:
 let busy = StatusImage.attention(StatusCounts(working: 3, needsYou: 2, yourTurn: 18, stale: 9))
 expect(calm.map(\.1) == [false, false] && busy.map(\.1) == [true, false], "pill only when something needs you")
 expect(busy.map { $0.0.string } == ["2N", "18T"], "letters \(busy.map { $0.0.string })")
-expect(StatusImage.attentionWidth(StatusCounts(working: 0, needsYou: 1, yourTurn: 18, stale: 0)) <= 64,
+expect(StatusImage.attentionWidth(StatusCounts(working: 0, needsYou: 1, yourTurn: 18, stale: 0)) <= 56,
        "attention width \(StatusImage.attentionWidth(StatusCounts(working: 0, needsYou: 1, yourTurn: 18, stale: 0)))")
+// Rendered gap from the N pill's right edge to the first inked pixel of "18T": empty columns
+// equal to the graphs' spacing.
+let attn = StatusImage.make([], work: nil, counts: StatusCounts(working: 0, needsYou: 1, yourTurn: 18, stale: 0),
+                            appearance: NSAppearance(named: .darkAqua)!)
+let attnRep = NSBitmapImageRep(data: attn.tiffRepresentation!)!
+let scale = CGFloat(attnRep.pixelsWide) / attn.size.width
+var pillEnd = -1, tStart = -1
+for x in 0..<attnRep.pixelsWide {
+    var amber = false, lit = false
+    for y in 0..<attnRep.pixelsHigh {
+        guard let c = attnRep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB), c.alphaComponent > 0.1 else { continue }
+        if c.redComponent > 0.8 && c.greenComponent > 0.45 && c.blueComponent < 0.35 { amber = true }
+        else if c.brightnessComponent * c.alphaComponent > 0.1 { lit = true }  // any ink, faint edges too
+    }
+    if amber { pillEnd = x } else if lit && pillEnd >= 0 && tStart < 0 { tStart = x }
+}
+let gap = CGFloat(tStart - pillEnd - 1) / scale
+expect(pillEnd >= 0 && tStart > pillEnd && abs(gap - StatusImage.spacing) <= 0.5, "N-to-T gap \(gap) pt (pill ends \(pillEnd), T starts \(tStart))")
 
 // Pixel graphs: columns map newest to the right edge; rows stay inside the box.
 let cols = StatusImage.columns([10, 20, 30], count: 34, capacity: 60)

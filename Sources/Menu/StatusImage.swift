@@ -1,20 +1,5 @@
 import AppKit
 
-enum Sparkline {
-    /// Points for a graph of `width` by `height`, `capacity` readings wide, newest at the right edge.
-    /// Values are percentages; y starts at the bottom, as in an unflipped AppKit context.
-    static func points(_ values: [Double], width: CGFloat, height: CGFloat, capacity: Int) -> [CGPoint] {
-        guard !values.isEmpty, capacity > 1 else { return [] }
-        let step = width / CGFloat(capacity - 1)
-        let shown = Array(values.suffix(capacity))
-        let start = CGFloat(capacity - shown.count) * step
-        return shown.enumerated().map { index, value in
-            let clamped = CGFloat(min(max(value, 0), 100))
-            return CGPoint(x: start + CGFloat(index) * step, y: 1 + clamped / 100 * (height - 2))
-        }
-    }
-}
-
 /// Scales working-session counts to the graph: the top is at least 5 sessions, or the hour's peak.
 enum WorkScale {
     /// The graph's top, in sessions: at least 5, or the hour's peak rounded up.
@@ -57,26 +42,23 @@ struct StatusGraph: Equatable {
     let mem: [Double]
 }
 
-/// Draws the menu bar item: for each machine, its name turned like a book spine (reading bottom to
-/// top) right against a graph with CPU and memory lines. Graphs are as tall as Stats draws its own.
+/// Draws the menu bar item: a graph per machine (CPU line over a grey RAM area, name in the corner),
+/// the work graph, then the N and T counts. Graphs are as tall as Stats draws its own.
 enum StatusImage {
     /// Stats' graph height: the menu bar's thickness less a point above and below.
     static var height: CGFloat { max(16, NSStatusBar.system.thickness - 2) }
     static let graphWidth: CGFloat = 34
-    static let labelFont = NSFont.systemFont(ofSize: 6.5, weight: .bold)  // tooltips only
-    static let labelInset: CGFloat = 1  // from the graph's left edge to the tops of the letters
-    static let spacing: CGFloat = 3     // between one graph and the next name
-    static let workingColor = NSColor(srgbRed: 0.22, green: 0.54, blue: 0.87, alpha: 1)
+    static let spacing: CGFloat = 3     // between one graph and the next
+    static let pillPadding: CGFloat = 3 // inside the N pill, each side
     static let needsYouColor = NSColor(srgbRed: 0.94, green: 0.62, blue: 0.15, alpha: 1)
     static let yourTurnColor = NSColor(srgbRed: 0.39, green: 0.60, blue: 0.13, alpha: 1)
     static let staleColor = NSColor(srgbRed: 0.53, green: 0.53, blue: 0.50, alpha: 1)
     static let workColor = NSColor(srgbRed: 0.50, green: 0.47, blue: 0.87, alpha: 1)
     static let bigFont = NSFont.monospacedDigitSystemFont(ofSize: 14, weight: .semibold)
     static let letterFont = NSFont.systemFont(ofSize: 9, weight: .semibold)
-    static let scaleFont = NSFont.monospacedDigitSystemFont(ofSize: 6.5, weight: .semibold)
     static let workCapacity = 60  // one point per minute: the last hour
-    static let cpuColor = NSColor(srgbRed: 0.52, green: 0.72, blue: 0.92, alpha: 1)
-    static let memColor = NSColor(srgbRed: 0.59, green: 0.77, blue: 0.35, alpha: 1)
+    static let cpuColor = NSColor(srgbRed: 0x6C / 255, green: 0xD4 / 255, blue: 0xFF / 255, alpha: 1)    // bright cyan line
+    static let memAreaColor = NSColor(srgbRed: 0x4A / 255, green: 0x4A / 255, blue: 0x4A / 255, alpha: 1) // grey level
 
     static func width(for count: Int) -> CGFloat {
         guard count > 0 else { return 0 }
@@ -95,8 +77,23 @@ enum StatusImage {
                 (pair(counts.yourTurn, "T", .labelColor), false)]
     }
 
+    /// Where each count sits, from the counts' left edge. The pill gets padding; after it, T's
+    /// first lit pixel sits `spacing` away, the same gap as between graphs.
+    static func attentionLayout(_ counts: StatusCounts) -> [(text: NSAttributedString, pill: Bool, x: CGFloat, width: CGFloat, textX: CGFloat)] {
+        var x: CGFloat = 0
+        return attention(counts).enumerated().map { index, item in
+            let (text, pill) = item
+            if index > 0 { x += spacing }
+            let glyphs = text.boundingRect(with: NSSize(width: 1000, height: 100), options: [.usesDeviceMetrics, .usesLineFragmentOrigin])
+            let bearing = pill ? 0 : max(0, glyphs.minX.rounded(.down))
+            let width = text.size().width.rounded(.up) + (pill ? 2 * pillPadding : -bearing)
+            defer { x += width }
+            return (text, pill, x, width, x + (pill ? pillPadding : -bearing))
+        }
+    }
+
     static func attentionWidth(_ counts: StatusCounts) -> CGFloat {
-        attention(counts).reduce(0) { $0 + $1.0.size().width.rounded(.up) + 8 }
+        attentionLayout(counts).last.map { $0.x + $0.width } ?? 0
     }
 
     static func make(_ graphs: [StatusGraph], work: [Double]?, counts: StatusCounts?, appearance: NSAppearance) -> NSImage {
@@ -111,14 +108,8 @@ enum StatusImage {
                 for graph in graphs {
                     let box = NSRect(x: x, y: 0, width: graphWidth, height: height)
                     pixelBox(box)
-                    switch memStyle {
-                    case .area:
-                        pixelBars(graph.mem, in: box, color: memColor.withAlphaComponent(0.38), capacity: LiveMetricsService.capacity)
-                        pixelLine(graph.cpu, in: box, color: cpuColor, capacity: LiveMetricsService.capacity)
-                    case .line:
-                        pixelLine(graph.mem, in: box, color: memColor, capacity: LiveMetricsService.capacity)
-                        pixelLine(graph.cpu, in: box, color: cpuColor, capacity: LiveMetricsService.capacity)
-                    }
+                    pixelBars(graph.mem, in: box, color: memAreaColor, capacity: LiveMetricsService.capacity)
+                    pixelLine(graph.cpu, in: box, color: cpuColor, capacity: LiveMetricsService.capacity)
                     drawLabel(graph.label, inside: box)
                     x += graphWidth + spacing
                 }
@@ -129,20 +120,18 @@ enum StatusImage {
                     drawGrid(top: WorkScale.top(work), in: box)
                     pixelBars(WorkScale.percent(work), in: box, color: workColor, capacity: workCapacity)
                     drawLabel("W", inside: box)
-                    drawScale("\(WorkScale.top(work))", in: box)
+                    drawScale("\(WorkScale.summary(work).median)", in: box)
                 }
                 if let counts {
-                    var cx = countsX
-                    for (text, pill) in attention(counts) {
-                        let size = text.size()
-                        let w = size.width.rounded(.up) + 6
-                        if pill {
+                    for item in attentionLayout(counts) {
+                        let x = countsX + item.x
+                        if item.pill {
                             needsYouColor.setFill()
-                            NSBezierPath(roundedRect: NSRect(x: cx, y: 1, width: w, height: height - 2),
+                            NSBezierPath(roundedRect: NSRect(x: x, y: 1, width: item.width, height: height - 2),
                                          xRadius: 4, yRadius: 4).fill()
                         }
-                        text.draw(at: NSPoint(x: cx + 3, y: (height - size.height) / 2))
-                        cx += w + 2
+                        let size = item.text.size()
+                        item.text.draw(at: NSPoint(x: countsX + item.textX, y: (height - size.height) / 2))
                     }
                 }
             }
@@ -172,12 +161,16 @@ enum StatusImage {
         1 + Int((min(max(percent, 0), 100) / 100 * Double(height - 3)).rounded())
     }
 
-    /// The graph background: a dark box with its four corner pixels cut, drawn without smoothing.
-    private static func pixelBox(_ box: NSRect) {
+    /// The graph background: a box with its four corner pixels cut, drawn without smoothing.
+    /// With a nil colour it only cuts the corners.
+    private static func pixelBox(_ box: NSRect, color: NSColor? = NSColor(white: 0.16, alpha: 1)) {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current?.shouldAntialias = false
-        NSColor(white: 0.16, alpha: 1).setFill()
-        box.fill()
+        if let color {
+            color.setFill()
+            box.fill()
+        }
+        NSColor.clear.setFill()
         for corner in [NSPoint(x: box.minX, y: box.minY), NSPoint(x: box.maxX - 1, y: box.minY),
                        NSPoint(x: box.minX, y: box.maxY - 1), NSPoint(x: box.maxX - 1, y: box.maxY - 1)] {
             NSRect(origin: corner, size: NSSize(width: 1, height: 1)).fill(using: .clear)
@@ -202,16 +195,18 @@ enum StatusImage {
         NSGraphicsContext.restoreGraphicsState()
     }
 
-    /// Solid one-point bars from the box bottom, one per column.
-    private static func pixelBars(_ values: [Double], in box: NSRect, color: NSColor, capacity: Int) {
+    /// Solid one-point bars from the box bottom, one per column. `floor` is the first row filled.
+    private static func pixelBars(_ values: [Double], in box: NSRect, color: NSColor, capacity: Int, floor: Int = 1) {
         let cols = columns(values, count: Int(box.width), capacity: capacity)
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current?.shouldAntialias = false
         color.setFill()
         for (col, value) in cols.enumerated() {
             guard let value else { continue }
-            let y = row(value, height: Int(box.height))
-            NSRect(x: box.minX + CGFloat(col), y: box.minY + 1, width: 1, height: CGFloat(y)).fill()
+            let top = floor == 0 ? Int((min(max(value, 0), 100) / 100 * Double(box.height)).rounded())
+                                 : row(value, height: Int(box.height))
+            guard top > floor - 1 else { continue }
+            NSRect(x: box.minX + CGFloat(col), y: box.minY + CGFloat(floor), width: 1, height: CGFloat(top - floor + 1)).fill()
         }
         NSGraphicsContext.restoreGraphicsState()
     }
@@ -236,106 +231,19 @@ enum StatusImage {
         NSGraphicsContext.restoreGraphicsState()
     }
 
-    private static func fillArea(_ values: [Double], in box: NSRect, color: NSColor) {
-        let points = Sparkline.points(values, width: box.width, height: box.height, capacity: workCapacity)
-        guard points.count > 1 else { return }
-        let path = NSBezierPath()
-        path.move(to: NSPoint(x: box.minX + points[0].x, y: box.minY + 1))
-        for point in points {
-            path.line(to: NSPoint(x: box.minX + point.x, y: box.minY + point.y))
-        }
-        path.line(to: NSPoint(x: box.minX + points[points.count - 1].x, y: box.minY + 1))
-        path.close()
-        color.withAlphaComponent(0.85).setFill()
-        path.fill()
-    }
-
-    private static func stroke(_ values: [Double], in box: NSRect, color: NSColor) {
-        let points = Sparkline.points(values, width: box.width, height: box.height, capacity: LiveMetricsService.capacity)
-        guard points.count > 1 else { return }
-        let path = NSBezierPath()
-        path.lineWidth = 1.2
-        path.lineJoinStyle = .round
-        path.move(to: NSPoint(x: box.minX + points[0].x, y: box.minY + points[0].y))
-        for point in points.dropFirst() {
-            path.line(to: NSPoint(x: box.minX + point.x, y: box.minY + point.y))
-        }
-        color.setStroke()
-        path.stroke()
-    }
-
-    /// Light text with a thin dark outline, so it stays readable over the lines it covers.
-    static func outlined(_ text: String, font: NSFont) -> NSAttributedString {
-        NSAttributedString(string: text, attributes: [
-            .font: font,
-            .foregroundColor: NSColor(white: 0.95, alpha: 1),
-            .strokeColor: NSColor(white: 0.16, alpha: 1),
-            .strokeWidth: -5,  // negative: fill and outline together
-        ])
-    }
-
-    /// How RAM is drawn: a line like CPU, or a level, a plain dim area under the CPU line, so the
-    /// graph has one line and RAM stays readable where the two would cross.
-    enum MemStyle { case line, area }
-    static var memStyle: MemStyle = .area
-
-    enum LabelStyle { case sidewaysPixel, uprightPixel, uprightText, uprightMono }
-    static var labelStyle: LabelStyle = .uprightPixel
-    static var labelFace: PixelFace = .medium
-
+    static let labelFace: PixelFace = .medium
     static let labelLight = NSColor(white: 0.95, alpha: 1)
     static let labelDark = NSColor(white: 0.16, alpha: 1)
 
-    /// The name in the 3×5 pixel font, reading bottom to top along the graph's inside left edge,
-    /// over the lines. The letter tops sit `labelInset` points inside the edge.
+    /// The name upright in the 4×6 pixel face, in the graph's top-left corner, over the lines.
     private static func drawLabel(_ text: String, inside box: NSRect) {
-        switch labelStyle {
-        case .sidewaysPixel:
-            let points = PixelFont.verticalPoints(text, left: box.minX, midY: box.midY, height: box.height,
-                                                  inset: Int(labelInset))
-            PixelFont.draw(points, light: labelLight, outline: labelDark)
-        case .uprightPixel:
-            let points = labelFace.topLeftPoints(text, left: box.minX + 2, top: box.maxY - 1, maxWidth: box.width - 4)
-            PixelFont.draw(points, light: labelLight, outline: labelDark)
-        case .uprightText, .uprightMono:
-            drawCrisp(text.uppercased(), at: NSPoint(x: box.minX + 1.5, y: box.maxY - 1.5), anchorRight: false)
-        }
+        PixelFont.draw(labelFace.topLeftPoints(text, left: box.minX + 2, top: box.maxY - 1, maxWidth: box.width - 4),
+                       light: labelLight, outline: labelDark)
     }
 
-    static var crispFont: NSFont {
-        labelStyle == .uprightMono
-            ? NSFont.monospacedSystemFont(ofSize: 8.5, weight: .bold)
-            : NSFont.systemFont(ofSize: 9, weight: .semibold)
-    }
-
-    /// Native-resolution text on a small dark patch (no outline stroke), its top edge at `point.y`
-    /// and its left (or right) edge at `point.x`, snapped to the Retina pixel grid.
-    private static func drawCrisp(_ text: String, at point: NSPoint, anchorRight: Bool) {
-        let string = NSAttributedString(string: text, attributes: [.font: crispFont, .foregroundColor: labelLight, .kern: 0.3])
-        let size = string.size()
-        let capTop = crispFont.ascender - crispFont.capHeight  // empty space above capitals
-        var x = anchorRight ? point.x - size.width : point.x
-        var y = point.y - size.height + capTop
-        x = (x * 2).rounded() / 2
-        y = (y * 2).rounded() / 2
-        let patch = NSRect(x: x - 1, y: y - crispFont.descender - 1, width: size.width + 2,
-                           height: crispFont.capHeight + 2)
-        labelDark.withAlphaComponent(0.9).setFill()
-        NSBezierPath(roundedRect: patch, xRadius: 1.5, yRadius: 1.5).fill()
-        string.draw(at: NSPoint(x: x, y: y))
-    }
-
-    /// The work graph's top value in its top-right corner, in the label style.
+    /// The work graph's median in its top-right corner.
     private static func drawScale(_ text: String, in box: NSRect) {
-        switch labelStyle {
-        case .sidewaysPixel:
-            PixelFont.draw(PixelFont.cornerPoints(text, right: box.maxX - 2, top: box.maxY - 1),
-                           light: labelLight, outline: labelDark)
-        case .uprightPixel:
-            PixelFont.draw(labelFace.topRightPoints(text, right: box.maxX - 2, top: box.maxY - 1),
-                           light: labelLight, outline: labelDark)
-        case .uprightText, .uprightMono:
-            drawCrisp(text, at: NSPoint(x: box.maxX - 1.5, y: box.maxY - 1.5), anchorRight: true)
-        }
+        PixelFont.draw(labelFace.topRightPoints(text, right: box.maxX - 2, top: box.maxY - 1),
+                       light: labelLight, outline: labelDark)
     }
 }

@@ -1,8 +1,7 @@
 import AppKit
 
-/// Pixel fonts drawn one point per pixel on the pixel grid with antialiasing off, so tiny labels
+/// Pixel faces drawn one point per pixel on the pixel grid with antialiasing off, so tiny labels
 /// stay sharp. Uppercase letters, digits, '-' and '.'; anything else draws as a space.
-/// `PixelFont` is the 3×5 sideways face; `PixelFace` holds the upright faces.
 /// An upright pixel face: rows of "#" per glyph, drawn one point per pixel. Glyphs may be
 /// narrower or wider than `width` (I is narrow, W wide); each advances by its own width plus one.
 struct PixelFace {
@@ -49,48 +48,6 @@ struct PixelFace {
         return pixels(text).map { col, row in (x0 + col, yTop - row) }
     }
 
-    /// 5×7: the classic dot-matrix face.
-    static let large = PixelFace(width: 5, height: 7, glyphs: [
-        "A": [".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"],
-        "B": ["####.", "#...#", "#...#", "####.", "#...#", "#...#", "####."],
-        "C": [".###.", "#...#", "#....", "#....", "#....", "#...#", ".###."],
-        "D": ["####.", "#...#", "#...#", "#...#", "#...#", "#...#", "####."],
-        "E": ["#####", "#....", "#....", "####.", "#....", "#....", "#####"],
-        "F": ["#####", "#....", "#....", "####.", "#....", "#....", "#...."],
-        "G": [".###.", "#...#", "#....", "#.###", "#...#", "#...#", ".####"],
-        "H": ["#...#", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"],
-        "I": [".###.", "..#..", "..#..", "..#..", "..#..", "..#..", ".###."],
-        "J": ["..###", "...#.", "...#.", "...#.", "...#.", "#..#.", ".##.."],
-        "K": ["#...#", "#..#.", "#.#..", "##...", "#.#..", "#..#.", "#...#"],
-        "L": ["#....", "#....", "#....", "#....", "#....", "#....", "#####"],
-        "M": ["#...#", "##.##", "#.#.#", "#.#.#", "#...#", "#...#", "#...#"],
-        "N": ["#...#", "#...#", "##..#", "#.#.#", "#..##", "#...#", "#...#"],
-        "O": [".###.", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."],
-        "P": ["####.", "#...#", "#...#", "####.", "#....", "#....", "#...."],
-        "Q": [".###.", "#...#", "#...#", "#...#", "#.#.#", "#..#.", ".##.#"],
-        "R": ["####.", "#...#", "#...#", "####.", "#.#..", "#..#.", "#...#"],
-        "S": [".####", "#....", "#....", ".###.", "....#", "....#", "####."],
-        "T": ["#####", "..#..", "..#..", "..#..", "..#..", "..#..", "..#.."],
-        "U": ["#...#", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."],
-        "V": ["#...#", "#...#", "#...#", "#...#", "#...#", ".#.#.", "..#.."],
-        "W": ["#...#", "#...#", "#...#", "#.#.#", "#.#.#", "#.#.#", ".#.#."],
-        "X": ["#...#", "#...#", ".#.#.", "..#..", ".#.#.", "#...#", "#...#"],
-        "Y": ["#...#", "#...#", ".#.#.", "..#..", "..#..", "..#..", "..#.."],
-        "Z": ["#####", "....#", "...#.", "..#..", ".#...", "#....", "#####"],
-        "0": [".###.", "#...#", "#..##", "#.#.#", "##..#", "#...#", ".###."],
-        "1": ["..#..", ".##..", "..#..", "..#..", "..#..", "..#..", ".###."],
-        "2": [".###.", "#...#", "....#", "...#.", "..#..", ".#...", "#####"],
-        "3": ["#####", "...#.", "..#..", "...#.", "....#", "#...#", ".###."],
-        "4": ["...#.", "..##.", ".#.#.", "#..#.", "#####", "...#.", "...#."],
-        "5": ["#####", "#....", "####.", "....#", "....#", "#...#", ".###."],
-        "6": ["..##.", ".#...", "#....", "####.", "#...#", "#...#", ".###."],
-        "7": ["#####", "....#", "...#.", "..#..", ".#...", ".#...", ".#..."],
-        "8": [".###.", "#...#", "#...#", ".###.", "#...#", "#...#", ".###."],
-        "9": [".###.", "#...#", "#...#", ".####", "....#", "...#.", ".##.."],
-        "-": [".....", ".....", ".....", "#####", ".....", ".....", "....."],
-        ".": [".....", ".....", ".....", ".....", ".....", ".##..", ".##.."],
-    ])
-
     /// 4×6: one step smaller. I, T, V and Y use three columns; M and W use five.
     static let medium = PixelFace(width: 4, height: 6, glyphs: [
         "A": [".##.", "#..#", "#..#", "####", "#..#", "#..#"], "B": ["###.", "#..#", "###.", "#..#", "#..#", "###."],
@@ -115,56 +72,8 @@ struct PixelFace {
     ])
 }
 
+/// Draws pixel cells, one point each, with a one-pixel outline and antialiasing off.
 enum PixelFont {
-    static let width = 3
-    static let height = 5
-    static let advance = 4  // glyph width plus one blank column
-
-    // Rows top to bottom, "#" lit.
-    static let glyphs: [Character: [String]] = [
-        "A": [".#.", "#.#", "###", "#.#", "#.#"], "B": ["##.", "#.#", "##.", "#.#", "##."],
-        "C": [".##", "#..", "#..", "#..", ".##"], "D": ["##.", "#.#", "#.#", "#.#", "##."],
-        "E": ["###", "#..", "##.", "#..", "###"], "F": ["###", "#..", "##.", "#..", "#.."],
-        "G": [".##", "#..", "#.#", "#.#", ".##"], "H": ["#.#", "#.#", "###", "#.#", "#.#"],
-        "I": ["###", ".#.", ".#.", ".#.", "###"], "J": ["..#", "..#", "..#", "#.#", ".#."],
-        "K": ["#.#", "#.#", "##.", "#.#", "#.#"], "L": ["#..", "#..", "#..", "#..", "###"],
-        "M": ["#.#", "###", "###", "#.#", "#.#"], "N": ["##.", "#.#", "#.#", "#.#", "#.#"],
-        "O": [".#.", "#.#", "#.#", "#.#", ".#."], "P": ["##.", "#.#", "##.", "#..", "#.."],
-        "Q": [".#.", "#.#", "#.#", "##.", ".##"], "R": ["##.", "#.#", "##.", "#.#", "#.#"],
-        "S": [".##", "#..", ".#.", "..#", "##."], "T": ["###", ".#.", ".#.", ".#.", ".#."],
-        "U": ["#.#", "#.#", "#.#", "#.#", "###"], "V": ["#.#", "#.#", "#.#", "#.#", ".#."],
-        "W": ["#.#", "#.#", "###", "###", "#.#"], "X": ["#.#", "#.#", ".#.", "#.#", "#.#"],
-        "Y": ["#.#", "#.#", ".#.", ".#.", ".#."], "Z": ["###", "..#", ".#.", "#..", "###"],
-        "0": ["###", "#.#", "#.#", "#.#", "###"], "1": [".#.", "##.", ".#.", ".#.", "###"],
-        "2": ["##.", "..#", ".#.", "#..", "###"], "3": ["##.", "..#", ".#.", "..#", "##."],
-        "4": ["#.#", "#.#", "###", "..#", "..#"], "5": ["###", "#..", "##.", "..#", "##."],
-        "6": [".##", "#..", "###", "#.#", "###"], "7": ["###", "..#", ".#.", ".#.", ".#."],
-        "8": ["###", "#.#", "###", "#.#", "###"], "9": ["###", "#.#", "###", "..#", "##."],
-        "-": ["...", "...", "###", "...", "..."], ".": ["...", "...", "...", "...", ".#."],
-    ]
-
-    /// Lit pixels of `text` laid out left to right, as (column, row-from-top).
-    static func pixels(_ text: String) -> [(Int, Int)] {
-        var out: [(Int, Int)] = []
-        for (index, char) in text.uppercased().enumerated() {
-            guard let rows = glyphs[char] else { continue }
-            for (row, line) in rows.enumerated() {
-                for (col, cell) in line.enumerated() where cell == "#" {
-                    out.append((index * advance + col, row))
-                }
-            }
-        }
-        return out
-    }
-
-    /// Length in points of `count` characters.
-    static func length(_ count: Int) -> Int { max(0, count * advance - 1) }
-
-    /// How many characters fit in `points`.
-    static func fits(_ points: CGFloat) -> Int { max(0, (Int(points) + 1) / advance) }
-
-    /// Draws `points` (already placed, in whole points) as light pixels with a one-pixel dark
-    /// outline, with antialiasing off.
     static func draw(_ points: [(Int, Int)], light: NSColor, outline: NSColor) {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current?.shouldAntialias = false
@@ -186,23 +95,5 @@ enum PixelFont {
             NSRect(x: x, y: y, width: 1, height: 1).fill()
         }
         NSGraphicsContext.restoreGraphicsState()
-    }
-
-    /// `text` reading bottom to top along a box's inside left edge: letter tops face left and sit
-    /// `inset` points in from `left`. Truncated to what fits `height`, centred on `midY`.
-    static func verticalPoints(_ text: String, left: CGFloat, midY: CGFloat, height: CGFloat,
-                               inset: Int) -> [(Int, Int)] {
-        let shown = String(text.prefix(fits(height - 2)))
-        let start = Int((midY - CGFloat(length(shown.count)) / 2).rounded(.down))
-        let x0 = Int(left.rounded(.up)) + inset
-        // Turned a quarter turn anticlockwise: a glyph's column runs up, its top row is leftmost.
-        return pixels(shown).map { col, row in (x0 + row, start + col) }
-    }
-
-    /// `text` upright with its top-right corner at (right, top), both in points.
-    static func cornerPoints(_ text: String, right: CGFloat, top: CGFloat) -> [(Int, Int)] {
-        let x0 = Int(right.rounded(.down)) - length(text.count)
-        let yTop = Int(top.rounded(.down)) - 1
-        return pixels(text).map { col, row in (x0 + col, yTop - row) }
     }
 }

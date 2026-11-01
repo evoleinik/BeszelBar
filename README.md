@@ -6,7 +6,8 @@ BeszelBar keeps your [Beszel](https://github.com/henrygd/beszel) infrastructure 
 
 ## This fork (branch `agents`)
 
-- **Live graphs in the menu bar.** One graph per machine, with a blue CPU line and a green RAM line. It subscribes to Beszel's `rt_metrics` realtime feed, the web UI's one-second feed. Readings are averaged into one point per 5 seconds, so each graph covers 5 minutes. Servers come first, then Macs. Each name reads bottom to top beside its graph, and graphs match Stats' height.
+- **Live graphs in the menu bar.** One graph per machine: a cyan CPU line over a grey RAM area, drawn on the pixel grid with no smoothing. The machine name sits in the top-left corner in a 4×6 pixel font. It subscribes to Beszel's `rt_metrics` realtime feed, the web UI's one-second feed. Readings are averaged into one point per 5 seconds, so each graph covers 5 minutes. Servers come first, then Macs. Graphs match Stats' height.
+- **Work graph and counts.** W graphs working sessions over the last hour, with the hour's median in its corner. N counts sessions that need you, in an amber pill. T counts finished turns waiting for your next message. Every gap in the item is 3 points.
 - **Agents section and waiting badge.** These read agent-exporter's custom metrics from `custom_stats`. That collection needs Beszel with henrygd/beszel#2562.
 - **Checks.** Run `scripts/check-live.sh` for the stream parser, topic encoding, averaging and geometry. Run `scripts/check-agent-stats.sh [record.json]` for the agent metric parser.
 - **Build and install.** Run `scripts/build-local.sh` on the Mac. It signs ad hoc with a fixed rule, the bundle id, so the keychain sees each rebuild as the same app and one "Always Allow" lasts. It works over SSH too.
