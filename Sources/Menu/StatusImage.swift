@@ -63,7 +63,7 @@ enum StatusImage {
     /// Stats' graph height: the menu bar's thickness less a point above and below.
     static var height: CGFloat { max(16, NSStatusBar.system.thickness - 2) }
     static let graphWidth: CGFloat = 34
-    static let labelFont = NSFont.systemFont(ofSize: 6.5, weight: .bold)
+    static let labelFont = NSFont.systemFont(ofSize: 6.5, weight: .bold)  // tooltips only
     static let labelInset: CGFloat = 1  // from the graph's left edge to the tops of the letters
     static let spacing: CGFloat = 3     // between one graph and the next name
     static let workingColor = NSColor(srgbRed: 0.22, green: 0.54, blue: 0.87, alpha: 1)
@@ -125,8 +125,8 @@ enum StatusImage {
                     drawGrid(top: WorkScale.top(work), in: box)
                     fillArea(WorkScale.percent(work), in: box, color: workColor)
                     drawLabel("work", inside: box)
-                    let top = outlined("\(WorkScale.top(work))", font: labelFont)
-                    top.draw(at: NSPoint(x: box.maxX - top.size().width - 1.5, y: box.maxY - top.size().height + 0.5))
+                    PixelFont.draw(PixelFont.cornerPoints("\(WorkScale.top(work))", right: box.maxX - 2, top: box.maxY - 1),
+                                   light: labelLight, outline: labelDark)
                 }
                 if let counts {
                     var cx = countsX
@@ -203,26 +203,14 @@ enum StatusImage {
         ])
     }
 
-    /// The name turned a quarter turn anticlockwise (reading bottom to top) along the graph's left
-    /// edge, inside it and over the lines. The letter tops stay `labelInset` inside the edge.
+    static let labelLight = NSColor(white: 0.95, alpha: 1)
+    static let labelDark = NSColor(white: 0.16, alpha: 1)
+
+    /// The name in the 3×5 pixel font, reading bottom to top along the graph's inside left edge,
+    /// over the lines. The letter tops sit `labelInset` points inside the edge.
     private static func drawLabel(_ text: String, inside box: NSRect) {
-        guard !text.isEmpty else { return }
-        var font = labelFont
-        var string = outlined(text, font: font)
-        while string.size().width > box.height - 2 && font.pointSize > 4 {
-            font = NSFont.systemFont(ofSize: font.pointSize - 0.5, weight: .bold)
-            string = outlined(text, font: font)
-        }
-        NSGraphicsContext.saveGraphicsState()
-        let transform = NSAffineTransform()
-        // Rotated a quarter turn anticlockwise, the letter tops face left. Put the baseline one
-        // ascender (plus the inset) in from the left edge, so the tops land on the inset.
-        transform.translateX(by: box.minX + labelInset + font.ascender, yBy: box.midY)
-        transform.rotate(byDegrees: 90)
-        transform.concat()
-        // In the rotated frame +y runs left. draw(at:) puts the descender line at y, so the
-        // baseline sits at 0.
-        string.draw(at: NSPoint(x: -string.size().width / 2, y: font.descender))
-        NSGraphicsContext.restoreGraphicsState()
+        let points = PixelFont.verticalPoints(text, left: box.minX, midY: box.midY, height: box.height,
+                                              inset: Int(labelInset))
+        PixelFont.draw(points, light: labelLight, outline: labelDark)
     }
 }

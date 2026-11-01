@@ -41,6 +41,7 @@ expect(StatusImage.width(for: 2) == 2 * StatusImage.graphWidth + StatusImage.spa
 import AppKit
 let probe = StatusImage.make([StatusGraph(label: "box", cpu: [], mem: [])], work: nil, counts: nil,
                              appearance: NSAppearance(named: .darkAqua)!)
+// Antialiasing off: every label pixel is pure light or pure dark, never a blend.
 let rep = NSBitmapImageRep(data: probe.tiffRepresentation!)!
 var edgeBright = 0, innerBright = 0
 for y in 0..<rep.pixelsHigh {
@@ -51,9 +52,22 @@ for y in 0..<rep.pixelsHigh {
         if bright && x > 0 && x < rep.pixelsWide / 3 { innerBright += 1 }
     }
 }
+var shades = Set<Int>()
+for y in 2..<(rep.pixelsHigh - 2) {
+    for x in 1..<(rep.pixelsWide / 3) {
+        guard let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+        shades.insert(Int((c.brightnessComponent * 20).rounded()))
+    }
+}
+expect(shades.count <= 2, "label area has \(shades.count) shades; antialiasing must be off (only light and outline)")
 expect(edgeBright == 0, "letters reach the left edge (\(edgeBright) bright pixels in column 0)")
 expect(innerBright > 3, "label drawn inside the graph (\(innerBright) bright pixels)")
-expect(StatusImage.outlined("work", font: StatusImage.labelFont).size().width <= StatusImage.height - 2, "work fits the height")
+expect(PixelFont.length(4) <= Int(StatusImage.height) - 2, "WORK fits the height")
+expect(PixelFont.glyphs.values.allSatisfy { $0.count == 5 && $0.allSatisfy { $0.count == 3 } }, "every glyph is 3x5")
+let vert = PixelFont.verticalPoints("box", left: 10, midY: 10, height: 20, inset: 1)
+expect(vert.map(\.0).min() == 11 && vert.map(\.0).max() == 15, "vertical label columns \(vert.map(\.0).min()!)...\(vert.map(\.0).max()!)")
+expect(Set(vert.map(\.1)).count > 5, "vertical label runs up the edge")
+expect(PixelFont.verticalPoints("averylongname", left: 0, midY: 10, height: 20, inset: 1).map(\.1).max()! < 20, "long names truncate to fit")
 expect(StatusImage.height >= 16, "height \(StatusImage.height)")
 
 // Averaging: one point per 5-second window, the mean of its readings.
