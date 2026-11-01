@@ -211,6 +211,10 @@ for (col, pct) in [(3, 20.0), (12, 40.0), (20, 60.0), (25, 80.0)] {  // 28+ sits
     let r = StatusImage.row(pct, height: Int(StatusImage.height))
     expect(same(pixel(stepImage, col, r), StatusImage.cpuColor), "median step missing at column \(col), row \(r)")
 }
+// The corner number is the newest block's median (4 here), not the whole graph's (3).
+expect(WorkScale.latestMedian(stepWork) == 4 && WorkScale.summary(stepWork.map(\.count)).median == 3, "latest median")
+let digit = StatusImage.labelFace.topRightPoints("4", right: StatusImage.graphWidth - 2, top: StatusImage.height - 1)
+expect(digit.allSatisfy { pixel(stepImage, $0.0, $0.1).brightnessComponent > 0.85 }, "corner number is not the latest median")
 // A new column scrolls the steps one pixel and changes no finished block's step.
 let stepLater = Array((stepWork + [WorkScale.Column(minute: stepWork.last!.minute + 2, count: 4)]).suffix(34))
 expect(Array(WorkScale.medianSteps(stepLater).prefix(33)) == Array(WorkScale.medianSteps(stepWork).suffix(33)),

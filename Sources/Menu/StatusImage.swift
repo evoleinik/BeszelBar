@@ -60,6 +60,14 @@ enum WorkScale {
     /// For each column, the median of its 16-minute block, in percent of the graph's top. Blocks
     /// are fixed in clock time, so a finished step never moves or changes. Each step uses the same
     /// rounded median as the corner number does for the whole graph.
+    /// The median of the newest 16-minute block, the number in the graph's corner. It matches the
+    /// last step of the cyan line.
+    static func latestMedian(_ columns: [Column]) -> Int {
+        guard let last = columns.last else { return 0 }
+        let block = last.minute / minutesPerBlock
+        return summary(columns.filter { $0.minute / minutesPerBlock == block }.map(\.count)).median
+    }
+
     static func medianSteps(_ columns: [Column]) -> [Double] {
         let t = Double(top(columns.map(\.count)))
         var blocks: [Int: [Double]] = [:]
@@ -179,7 +187,7 @@ enum StatusImage {
                     pixelLine(WorkScale.medianSteps(work), in: box, color: cpuColor)
                     pixelBox(box, color: nil)
                     drawLabel("W", inside: box)
-                    drawScale("\(WorkScale.summary(counts).median)", in: box)
+                    drawScale("\(WorkScale.latestMedian(work))", in: box)
                 }
                 if let counts {
                     for item in attentionLayout(counts) {
