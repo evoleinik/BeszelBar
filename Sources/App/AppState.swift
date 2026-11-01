@@ -14,7 +14,15 @@ final class AppState {
     var activeAlerts: [AlertRecord] = []
     var agentStats: [String: AgentStats] = [:]
 
-    var waitingTotal: Int { agentStats.values.reduce(0) { $0 + $1.waiting } }
+    var statusCounts: StatusCounts? {
+        guard !agentStats.isEmpty else { return nil }
+        return agentStats.values.reduce(into: StatusCounts()) { c, s in
+            c.working += s.working
+            c.needsYou += s.needsYou
+            c.yourTurn += s.yourTurn
+            c.stale += s.stale
+        }
+    }
     var isLoading = false
     var errorMessage: String?
     var isConfigured = false

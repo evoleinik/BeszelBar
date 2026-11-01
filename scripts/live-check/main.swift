@@ -47,5 +47,11 @@ for (t, cpu) in [(0.0, 10.0), (1, 20), (2, 30), (3, 40), (4, 50), (5, 60), (6, 7
 }
 expect(averaged == [LivePoint(cpu: 35, mem: 50)], "averaged \(averaged)")
 
+// Counts column: drawn after the graphs, as wide as a dot plus the widest number.
+let counts = StatusCounts(working: 3, needsYou: 1, yourTurn: 21, stale: 106)
+expect(StatusImage.countsWidth(counts) > StatusImage.countsWidth(StatusCounts(working: 1, needsYou: 0, yourTurn: 2, stale: 3)),
+       "a three-digit count makes the column wider")
+expect(StatusImage.countsWidth(counts) <= 18, "counts column \(StatusImage.countsWidth(counts)) pt")
+
 if failures == 0 { print("ok") }
 exit(failures == 0 ? 0 : 1)

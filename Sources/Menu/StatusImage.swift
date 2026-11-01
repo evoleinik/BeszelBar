@@ -15,6 +15,15 @@ enum Sparkline {
     }
 }
 
+/// Session counts by status, summed across machines.
+struct StatusCounts: Equatable {
+    var working = 0
+    var needsYou = 0
+    var yourTurn = 0
+    var stale = 0
+    var values: [Int] { [working, needsYou, yourTurn, stale] }
+}
+
 /// One machine in the menu bar item: its name and its recent CPU and memory readings.
 struct StatusGraph: Equatable {
     let label: String
@@ -32,6 +41,11 @@ enum StatusImage {
     static let labelGap: CGFloat = 1.5  // from the name's baseline to its graph
     static var labelWidth: CGFloat { (labelGap + labelFont.ascender).rounded(.up) }
     static let spacing: CGFloat = 6     // between one machine's graph and the next name
+    static let workingColor = NSColor(srgbRed: 0.22, green: 0.54, blue: 0.87, alpha: 1)
+    static let needsYouColor = NSColor(srgbRed: 0.94, green: 0.62, blue: 0.15, alpha: 1)
+    static let yourTurnColor = NSColor(srgbRed: 0.39, green: 0.60, blue: 0.13, alpha: 1)
+    static let staleColor = NSColor(srgbRed: 0.53, green: 0.53, blue: 0.50, alpha: 1)
+    static let countFont = NSFont.monospacedDigitSystemFont(ofSize: 5.5, weight: .semibold)
     static let cpuColor = NSColor(srgbRed: 0.52, green: 0.72, blue: 0.92, alpha: 1)
     static let memColor = NSColor(srgbRed: 0.59, green: 0.77, blue: 0.35, alpha: 1)
 
@@ -40,9 +54,18 @@ enum StatusImage {
         return CGFloat(count) * (labelWidth + graphWidth) + CGFloat(count - 1) * spacing
     }
 
-    static func make(_ graphs: [StatusGraph], appearance: NSAppearance) -> NSImage {
+    /// Width of the four stacked session counts: a dot, then the widest number.
+    static func countsWidth(_ counts: StatusCounts) -> CGFloat {
+        let widest = counts.values.map { NSAttributedString(string: "\($0)", attributes: [.font: countFont]).size().width }.max() ?? 0
+        return 3 + 1.5 + widest.rounded(.up)
+    }
+
+    static func make(_ graphs: [StatusGraph], counts: StatusCounts?, appearance: NSAppearance) -> NSImage {
         let height = Self.height
-        let image = NSImage(size: NSSize(width: width(for: graphs.count), height: height), flipped: false) { _ in
+        let graphsWidth = width(for: graphs.count)
+        let countsGap: CGFloat = graphs.isEmpty ? 0 : spacing
+        let total = graphsWidth + (counts.map { countsGap + countsWidth($0) } ?? 0)
+        let image = NSImage(size: NSSize(width: total, height: height), flipped: false) { _ in
             appearance.performAsCurrentDrawingAppearance {
                 var x: CGFloat = 0
                 for graph in graphs {
@@ -53,6 +76,9 @@ enum StatusImage {
                     stroke(graph.mem, in: box, color: memColor)
                     stroke(graph.cpu, in: box, color: cpuColor)
                     x += labelWidth + graphWidth + spacing
+                }
+                if let counts {
+                    drawCounts(counts, at: graphsWidth + countsGap, height: height)
                 }
             }
             return true
@@ -73,6 +99,25 @@ enum StatusImage {
         }
         color.setStroke()
         path.stroke()
+    }
+
+    /// Four rows, top to bottom: working, needs you, your turn, stale. Each is a coloured dot and a count.
+    private static func drawCounts(_ counts: StatusCounts, at x: CGFloat, height: CGFloat) {
+        let rowHeight = height / 4
+        let rows: [(Int, NSColor, NSColor)] = [
+            (counts.working, workingColor, .labelColor),
+            (counts.needsYou, needsYouColor, counts.needsYou > 0 ? needsYouColor : .secondaryLabelColor),
+            (counts.yourTurn, yourTurnColor, .labelColor),
+            (counts.stale, staleColor, .secondaryLabelColor),
+        ]
+        for (index, (value, dotColor, textColor)) in rows.enumerated() {
+            let midY = height - (CGFloat(index) + 0.5) * rowHeight
+            dotColor.setFill()
+            NSBezierPath(ovalIn: NSRect(x: x, y: midY - 1.3, width: 2.6, height: 2.6)).fill()
+            let text = NSAttributedString(string: "\(value)", attributes: [.font: countFont, .foregroundColor: textColor])
+            let size = text.size()
+            text.draw(at: NSPoint(x: x + 3 + 1.5, y: midY - size.height / 2))
+        }
     }
 
     /// The name turned a quarter turn anticlockwise, reading bottom to top, centred on the graph's

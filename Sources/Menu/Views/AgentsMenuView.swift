@@ -1,41 +1,51 @@
 import SwiftUI
 
-/// The Agents section: who is waiting for you, then the rest of the agent state on one system.
+/// Colours shared by the menu bar counts and the dropdown.
+enum StatusColors {
+    static let working = Color(nsColor: StatusImage.workingColor)
+    static let needsYou = Color(nsColor: StatusImage.needsYouColor)
+    static let yourTurn = Color(nsColor: StatusImage.yourTurnColor)
+    static let stale = Color(nsColor: StatusImage.staleColor)
+}
+
+/// The Agents section: who needs you first, then the four statuses with what each one means.
 struct AgentsMenuView: View {
     let systemName: String
     let stats: AgentStats
 
     static let rowHeight: CGFloat = 19
+    static let captionHeight: CGFloat = 15
 
     static func height(for stats: AgentStats) -> CGFloat {
-        var rows = 5  // working, idle, stale, runaway, sessions
-        if stats.waiting > 0 { rows += 1 + stats.waitingSessions.count }
+        var rows: CGFloat = 4 + 1  // four statuses and runaway
         if stats.ollamaUp != nil { rows += 1 }
-        return 30 + CGFloat(rows) * rowHeight
+        let captions: CGFloat = 3
+        let needs = CGFloat(stats.needsYouSessions.count) * captionHeight
+        return 30 + rows * rowHeight + captions * captionHeight + needs + 4
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Label("Agents · \(systemName)", systemImage: "terminal")
+                Label("Agents · \(systemName) · \(stats.total) sessions", systemImage: "terminal")
                     .font(.system(size: 11, weight: .semibold))
                 Spacer()
             }
             .frame(height: 22)
 
-            if stats.waiting > 0 {
-                row("Waiting for you", "\(stats.waiting)", tint: .orange, emphasized: true)
-                ForEach(stats.waitingSessions) { session in
-                    row(session.name, AgentStats.duration(session.seconds), indent: true)
-                }
+            row("Needs you", "\(stats.needsYou)", dot: StatusColors.needsYou, emphasized: stats.needsYou > 0)
+            ForEach(stats.needsYouSessions) { session in
+                caption("\(session.name) · \(session.reason.text)", AgentStats.duration(session.seconds))
             }
-            row("Working", "\(stats.working)")
-            row("Idle", "\(stats.idle)")
-            row("Stale over 1 day", "\(stats.stale) · \(AgentStats.bytes(stats.staleBytes))")
+            row("Working", "\(stats.working)", dot: StatusColors.working)
+            caption("Mid-turn: thinking or running a tool")
+            row("Your turn", "\(stats.yourTurn)", dot: StatusColors.yourTurn)
+            caption("Finished, waiting for your next message")
+            row("Stale", "\(stats.stale) · \(AgentStats.bytes(stats.staleBytes))", dot: StatusColors.stale)
+            caption("Nothing for over a day; safe to close")
             row("Runaway processes",
                 stats.runaway == 0 ? "none" : "\(stats.runaway) · \(AgentStats.duration(stats.runawayLongest))",
-                tint: stats.runaway > 0 ? .red : nil)
-            row("Agent sessions", "\(stats.sessions) · \(AgentStats.bytes(stats.sessionBytes))")
+                dot: stats.runaway > 0 ? .red : nil)
             if let up = stats.ollamaUp {
                 row("ollama", up ? "up, \(stats.ollamaModels ?? 0) models" : "down")
             }
@@ -45,25 +55,32 @@ struct AgentsMenuView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private func row(_ title: String, _ value: String, tint: Color? = nil, emphasized: Bool = false,
-                     indent: Bool = false) -> some View {
+    private func row(_ title: String, _ value: String, dot: Color? = nil, emphasized: Bool = false) -> some View {
         HStack(spacing: 6) {
-            if let tint {
-                Circle().fill(tint).frame(width: 6, height: 6)
+            if let dot {
+                Circle().fill(dot).frame(width: 6, height: 6)
             }
             Text(title)
-                .foregroundColor(indent ? .secondary : .primary)
             Spacer()
-            Text(value)
-                .foregroundColor(indent ? .secondary : .primary)
-                .monospacedDigit()
+            Text(value).monospacedDigit()
         }
-        .font(.system(size: indent ? 11 : 12, weight: emphasized ? .semibold : .regular))
-        .padding(.leading, indent ? 12 : 0)
+        .font(.system(size: 12, weight: emphasized ? .semibold : .regular))
         .padding(.horizontal, emphasized ? 6 : 0)
         .frame(height: Self.rowHeight)
-        .background(emphasized ? (tint ?? .clear).opacity(0.15) : Color.clear)
+        .background(emphasized ? StatusColors.needsYou.opacity(0.15) : Color.clear)
         .cornerRadius(4)
         .padding(.horizontal, emphasized ? -6 : 0)
+    }
+
+    private func caption(_ text: String, _ trailing: String? = nil) -> some View {
+        HStack {
+            Text(text).lineLimit(1).truncationMode(.middle)
+            Spacer()
+            if let trailing { Text(trailing).monospacedDigit() }
+        }
+        .font(.system(size: 11))
+        .foregroundColor(.secondary)
+        .padding(.leading, 12)
+        .frame(height: Self.captionHeight)
     }
 }

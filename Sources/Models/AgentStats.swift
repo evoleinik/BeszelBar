@@ -8,28 +8,47 @@ struct CustomStatsRecord: Codable {
     let created: String?
 }
 
+/// Why a session needs you, as agent-exporter labels it.
+enum NeedsYouReason: String, CaseIterable {
+    case permission, question, plan, input, form
+
+    var text: String {
+        switch self {
+        case .permission: return "wants permission"
+        case .question: return "asked a question"
+        case .plan: return "wants a plan approved"
+        case .input: return "needs your input"
+        case .form: return "needs a form filled"
+        }
+    }
+}
+
 struct WaitingSession: Equatable, Identifiable {
     let name: String
+    let reason: NeedsYouReason
     let seconds: Int
-    var id: String { name }
+    var id: String { reason.rawValue + "/" + name }
 }
 
 /// Coding-agent metrics written by agent-exporter and stored by Beszel as custom metrics.
+/// Every session is in exactly one status, so the four counts add up to all sessions.
 struct AgentStats: Equatable {
     var working = 0
-    var waiting = 0
-    var idle = 0
-    var waitingSessions: [WaitingSession] = []
+    var needsYou = 0
+    var yourTurn = 0
+    var stale = 0
+    var needsYouSessions: [WaitingSession] = []
     var sessions = 0
     var sessionBytes = 0.0
-    var stale = 0
     var staleBytes = 0.0
     var runaway = 0
     var runawayLongest = 0
     var ollamaUp: Bool?
     var ollamaModels: Int?
 
-    static let waitingPrefix = "agent_waiting_session_seconds_"
+    var total: Int { working + needsYou + yourTurn + stale }
+
+    static let needsYouPrefix = "agent_needs_you_session_seconds_"
 
     /// Returns nil when the record holds no agent-exporter series.
     static func parse(_ stats: [String: Double]) -> AgentStats? {
@@ -37,25 +56,28 @@ struct AgentStats: Equatable {
         var s = AgentStats()
         func int(_ key: String) -> Int { Int((stats[key] ?? 0).rounded()) }
         s.working = int("agent_sessions_working")
-        s.waiting = int("agent_sessions_waiting")
-        s.idle = int("agent_sessions_idle")
+        s.needsYou = int("agent_sessions_needs_you")
+        s.yourTurn = int("agent_sessions_your_turn")
+        s.stale = int("agent_sessions_stale")
         s.staleBytes = stats["agent_stale_memory_bytes"] ?? 0
         s.runaway = int("agent_runaway_processes")
         s.runawayLongest = int("agent_runaway_longest_seconds")
         for (key, value) in stats {
-            if key.hasPrefix(waitingPrefix) {
-                // Beszel turns the session label into the key's tail, with "_" for separators.
-                let name = String(key.dropFirst(waitingPrefix.count)).replacingOccurrences(of: "_", with: "-")
-                s.waitingSessions.append(WaitingSession(name: name, seconds: Int(value.rounded())))
-            } else if key.hasPrefix("agent_stale_processes_") {
-                s.stale += Int(value.rounded())
+            if key.hasPrefix(needsYouPrefix) {
+                // Beszel builds the key from the label values in label-name order: reason, then
+                // session, joined by "_" with other separators turned into "_".
+                let tail = key.dropFirst(needsYouPrefix.count)
+                guard let cut = tail.firstIndex(of: "_"),
+                      let reason = NeedsYouReason(rawValue: String(tail[..<cut])) else { continue }
+                let name = String(tail[tail.index(after: cut)...]).replacingOccurrences(of: "_", with: "-")
+                s.needsYouSessions.append(WaitingSession(name: name, reason: reason, seconds: Int(value.rounded())))
             } else if key.hasPrefix("agent_processes_") {
                 s.sessions += Int(value.rounded())
             } else if key.hasPrefix("agent_memory_bytes_") {
                 s.sessionBytes += value
             }
         }
-        s.waitingSessions.sort { ($0.seconds, $1.name) > ($1.seconds, $0.name) }
+        s.needsYouSessions.sort { ($0.seconds, $1.name) > ($1.seconds, $0.name) }
         if let up = stats["ollama_up"] {
             s.ollamaUp = up >= 1
             s.ollamaModels = stats["ollama_models_loaded"].map { Int($0.rounded()) }

@@ -65,7 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let button = statusItem?.button else { return }
         let appState = AppState.shared
         let alertCount = appState.activeAlerts.count
-        let waiting = appState.waitingTotal
+        let counts = appState.statusCounts
         let live = LiveMetricsService.shared.history
         // Servers first, then Macs, each group by name.
         let systems = appState.selectedInstanceSystems
@@ -75,20 +75,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let points = live[system.id] ?? []
             return StatusGraph(label: system.name.lowercased(), cpu: points.map(\.cpu), mem: points.map(\.mem))
         }
-        if graphs.isEmpty {
+        if graphs.isEmpty && counts == nil {
             button.image = NSImage(systemSymbolName: alertCount > 0 ? "server.rack.fill" : "server.rack",
                                    accessibilityDescription: "BeszelBar")
             button.image?.size = NSSize(width: 18, height: 18)
         } else {
-            button.image = StatusImage.make(graphs, appearance: button.effectiveAppearance)
+            button.image = StatusImage.make(graphs, counts: counts, appearance: button.effectiveAppearance)
         }
-        button.attributedTitle = StatusTitle.make(alerts: alertCount, waiting: waiting)
+        button.attributedTitle = StatusTitle.make(alerts: alertCount)
         var tip = systems.compactMap { system -> String? in
             guard let last = live[system.id]?.last else { return nil }
             return "\(system.name) CPU \(Int(last.cpu.rounded()))% RAM \(Int(last.mem.rounded()))%"
         }
-        if waiting > 0 { tip.append("\(waiting) waiting for you") }
-        button.toolTip = tip.isEmpty ? nil : tip.joined(separator: " · ")
+        if let c = counts {
+            tip.append("Working \(c.working) · Needs you \(c.needsYou) · Your turn \(c.yourTurn) · Stale \(c.stale)")
+        }
+        button.toolTip = tip.isEmpty ? nil : tip.joined(separator: "\n")
     }
 
     private func isMac(_ system: SystemRecord, _ appState: AppState) -> Bool {
