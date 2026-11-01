@@ -103,14 +103,15 @@ enum RealtimeTopic {
     }
 }
 
-/// Keeps five minutes of CPU and memory per system from Beszel's realtime feed: one point per
-/// five seconds, each the average of that window's one-second readings. While it runs, the hub
-/// asks those agents for numbers every second. On start, the hub's last one-minute rows fill the
-/// graph, so it is never empty; live points push them out over five minutes.
+/// Keeps one graph's worth of CPU and memory per system from Beszel's realtime feed: one point
+/// per five seconds and per graph column, each the average of that window's one-second readings,
+/// so 34 points cover just under 3 minutes. While it runs, the hub asks those agents for numbers
+/// every second. On start, the hub's last one-minute rows fill the graph, so it is never empty;
+/// live points push them out.
 @MainActor
 final class LiveMetricsService {
     static let shared = LiveMetricsService()
-    nonisolated static let capacity = 60
+    nonisolated static let capacity = Int(StatusImage.graphWidth)
     nonisolated static let window = 5.0
 
     private var buckets: [String: ReadingBucket] = [:]

@@ -49,7 +49,7 @@ struct AgentsMenuView: View {
                 caption("… \(stats.yourTurn - min(stats.yourTurnSessions.count, Self.shownTurns)) more, oldest first")
             }
             row("W · Working", "\(stats.working)", dot: StatusColors.working,
-                help: "Mid-turn: thinking or running a tool. The work graph shows the last hour.")
+                help: "Mid-turn: thinking or running a tool. The work graph shows the last 68 minutes.")
             row("Stale, over a day", "\(stats.stale) · \(AgentStats.bytes(stats.staleBytes))", dot: StatusColors.stale,
                 help: "No activity for over a day. Safe to close; the memory they hold is shown.")
             row("Runaway processes",

@@ -123,7 +123,7 @@ let gap = CGFloat(tStart - pillEnd - 1) / scale
 expect(pillEnd >= 0 && tStart > pillEnd && abs(gap - StatusImage.spacing) <= 0.5, "N-to-T gap \(gap) pt (pill ends \(pillEnd), T starts \(tStart))")
 
 // Pixel graphs: columns map newest to the right edge; rows stay inside the box.
-let cols = StatusImage.columns([10, 20, 30], count: 34, capacity: 60)
+let cols = StatusImage.columns([10, 20, 30], count: 34)
 expect(cols.last! == 30 && cols.first! == nil, "newest value at the right edge, older columns empty")
 expect(StatusImage.row(0, height: 20) == 1 && StatusImage.row(100, height: 20) == 18, "rows 1...18 in a 20 pt box")
 let lineProbe = StatusImage.make([StatusGraph(label: "", cpu: Array(repeating: 30, count: 60), mem: Array(repeating: 70, count: 60))],
@@ -178,6 +178,20 @@ expect(purple(pixel(busyWork, 10, 0)), "work bar must reach the bottom row, got 
 expect(!purple(pixel(idleWork, 10, 0)), "zero sessions must draw no bar")
 expect(pixel(busyWork, 0, 0).alphaComponent < 0.1 && pixel(busyWork, 33, 0).alphaComponent < 0.1, "bottom corners stay cut")
 expect(same(pixel(rising, 3, 0), StatusImage.pressureColors[0]), "RAM area reaches the bottom row, got \(pixel(rising, 3, 0))")
+// Scrolling, not redrawing: one more point moves every column left by one and changes none of them.
+// Run through the real capacity, so a graph that holds more points than it has columns reds here.
+let width = Int(StatusImage.graphWidth)
+let series = (0..<LiveMetricsService.capacity).map { Double(($0 * 37) % 100) }
+let before = StatusImage.columns(series, count: width)
+let after = StatusImage.columns(Array((series + [55]).suffix(LiveMetricsService.capacity)), count: width)
+expect(Array(after.prefix(width - 1)) == Array(before.suffix(width - 1)) && after.last! == 55, "live graph redraws its history")
+// Work columns are two fixed minutes each: a new minute never changes a finished column.
+let workMinutes = ["2026-11-01 08:50": 2.0, "2026-11-01 08:51": 4, "2026-11-01 08:52": 6]
+expect(WorkScale.columns(perMinute: workMinutes) == [3, 6], "work columns \(WorkScale.columns(perMinute: workMinutes))")
+var workLater = workMinutes; workLater["2026-11-01 08:53"] = 10
+expect(WorkScale.columns(perMinute: workLater) == [3, 8], "a new minute only changes the newest column")
+let workHour = Dictionary(uniqueKeysWithValues: (0..<90).map { (String(format: "2026-11-01 %02d:%02d", 7 + $0 / 60, $0 % 60), Double($0)) })
+expect(WorkScale.columns(perMinute: workHour).count == width, "work graph holds one column per pixel")
 // Out-of-range pressure never traps: huge values clamp to critical, NaN and negatives draw grey.
 expect(StatusImage.memColor(1e300) === StatusImage.pressureColors[2] && StatusImage.memColor(.infinity) === StatusImage.memColor(.nan),
        "out-of-range pressure")

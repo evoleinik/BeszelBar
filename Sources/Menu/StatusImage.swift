@@ -24,6 +24,22 @@ enum WorkScale {
         let t = Double(top(counts))
         return counts.map { $0 / t * 100 }
     }
+
+    static let minutesPerColumn = 2
+
+    /// Per-minute counts ("2026-11-01 08:52" -> sessions) as one mean per two-minute column,
+    /// oldest first, one per graph column. Columns start on even minutes, so a finished column
+    /// never changes as new minutes arrive.
+    static func columns(perMinute: [String: Double]) -> [Double] {
+        var sums: [String: (total: Double, n: Double)] = [:]
+        for (minute, count) in perMinute {
+            guard minute.count >= 16, let mm = Int(minute.suffix(2)) else { continue }
+            let key = String(minute.prefix(14)) + String(format: "%02d", mm - mm % minutesPerColumn)
+            sums[key, default: (0, 0)].total += count
+            sums[key, default: (0, 0)].n += 1
+        }
+        return sums.keys.sorted().suffix(Int(StatusImage.graphWidth)).map { sums[$0]!.total / sums[$0]!.n }
+    }
 }
 
 /// Session counts by status, summed across machines.
@@ -48,7 +64,7 @@ struct StatusGraph: Equatable {
 enum StatusImage {
     /// Stats' graph height: the menu bar's thickness less a point above and below.
     static var height: CGFloat { max(16, NSStatusBar.system.thickness - 2) }
-    static let graphWidth: CGFloat = 34
+    static let graphWidth: CGFloat = 34  // also the number of points each graph holds, one per column
     static let spacing: CGFloat = 3     // between one graph and the next
     static let pillPadding: CGFloat = 3 // inside the N pill, each side
     static let needsYouColor = NSColor(srgbRed: 0.94, green: 0.62, blue: 0.15, alpha: 1)
@@ -57,7 +73,6 @@ enum StatusImage {
     static let workColor = NSColor(srgbRed: 0.50, green: 0.47, blue: 0.87, alpha: 1)
     static let bigFont = NSFont.monospacedDigitSystemFont(ofSize: 14, weight: .semibold)
     static let letterFont = NSFont.systemFont(ofSize: 9, weight: .semibold)
-    static let workCapacity = 60  // one point per minute: the last hour
     static let cpuColor = NSColor(white: 0.96, alpha: 1)  // white line, clear on every pressure colour
     static let memAreaColor = NSColor(srgbRed: 0x6E / 255, green: 0x6E / 255, blue: 0x6E / 255, alpha: 1) // no pressure data
     /// The RAM area's colour by memory pressure, as Activity Monitor does: normal, warning, critical.
@@ -120,9 +135,8 @@ enum StatusImage {
                 for graph in graphs {
                     let box = NSRect(x: x, y: 0, width: graphWidth, height: height)
                     pixelBox(box)
-                    pixelBars(graph.mem, in: box, color: memAreaColor, capacity: LiveMetricsService.capacity,
-                              levels: graph.pressure)
-                    pixelLine(graph.cpu, in: box, color: cpuColor, capacity: LiveMetricsService.capacity)
+                    pixelBars(graph.mem, in: box, color: memAreaColor, levels: graph.pressure)
+                    pixelLine(graph.cpu, in: box, color: cpuColor)
                     pixelBox(box, color: nil)  // bars reach the edge, so cut the corners again
                     drawLabel(graph.label, inside: box)
                     x += graphWidth + spacing
@@ -132,7 +146,7 @@ enum StatusImage {
                     let box = NSRect(x: start, y: 0, width: graphWidth, height: height)
                     pixelBox(box)
                     drawGrid(top: WorkScale.top(work), in: box)
-                    pixelBars(WorkScale.percent(work), in: box, color: workColor, capacity: workCapacity)
+                    pixelBars(WorkScale.percent(work), in: box, color: workColor)
                     pixelBox(box, color: nil)
                     drawLabel("W", inside: box)
                     drawScale("\(WorkScale.summary(work).median)", in: box)
@@ -158,17 +172,12 @@ enum StatusImage {
 
     // MARK: Pixel-grid drawing, antialiasing off, one point per pixel (matches the pixel font).
 
-    /// The value for each whole-point column of a graph, newest at the right edge. Columns
-    /// older than the history are nil.
-    static func columns<T>(_ values: [T], count: Int, capacity: Int) -> [T?] {
-        guard count > 1, capacity > 1, !values.isEmpty else { return Array(repeating: nil, count: max(0, count)) }
-        let shown = Array(values.suffix(capacity))
-        let missing = capacity - shown.count
-        return (0..<count).map { col in
-            let slot = Int((Double(col) * Double(capacity - 1) / Double(count - 1)).rounded())
-            let index = slot - missing
-            return index >= 0 && index < shown.count ? shown[index] : nil
-        }
+    /// One value per whole-point column, newest at the right edge; columns older than the
+    /// history are nil. Never resampled: a new value scrolls the graph one column and leaves
+    /// every older column as it was.
+    static func columns<T>(_ values: [T], count: Int) -> [T?] {
+        let shown = values.suffix(max(0, count)).map { Optional($0) }
+        return Array(repeating: nil, count: max(0, count) - shown.count) + shown
     }
 
     /// Row (in whole points from the box bottom) for a percentage, kept one point inside the box.
@@ -194,8 +203,8 @@ enum StatusImage {
     }
 
     /// A stepped line: one pixel per column, joined to the previous column by a vertical run.
-    private static func pixelLine(_ values: [Double], in box: NSRect, color: NSColor, capacity: Int) {
-        let cols = columns(values, count: Int(box.width), capacity: capacity)
+    private static func pixelLine(_ values: [Double], in box: NSRect, color: NSColor) {
+        let cols = columns(values, count: Int(box.width))
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current?.shouldAntialias = false
         color.setFill()
@@ -212,10 +221,10 @@ enum StatusImage {
 
     /// Solid one-point bars from the box's bottom edge up to the value's row, one per column. A
     /// zero draws nothing. With `levels`, each column takes its memory-pressure colour.
-    private static func pixelBars(_ values: [Double], in box: NSRect, color: NSColor, capacity: Int,
+    private static func pixelBars(_ values: [Double], in box: NSRect, color: NSColor,
                                   levels: [Double?]? = nil) {
-        let cols = columns(values, count: Int(box.width), capacity: capacity)
-        let tints = levels.map { columns($0, count: Int(box.width), capacity: capacity) }
+        let cols = columns(values, count: Int(box.width))
+        let tints = levels.map { columns($0, count: Int(box.width)) }
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current?.shouldAntialias = false
         color.setFill()
