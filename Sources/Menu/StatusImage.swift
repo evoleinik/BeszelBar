@@ -20,6 +20,21 @@ enum WorkScale {
     /// The graph's top, in sessions: at least 5, or the hour's peak rounded up.
     static func top(_ counts: [Double]) -> Int { max(5, Int((counts.max() ?? 0).rounded(.up))) }
 
+    struct Summary: Equatable {
+        let max: Int
+        let median: Int
+        let now: Int
+    }
+
+    /// The hour's peak, median and latest working-session counts.
+    static func summary(_ counts: [Double]) -> Summary {
+        let sorted = counts.sorted()
+        guard let last = counts.last, !sorted.isEmpty else { return Summary(max: 0, median: 0, now: 0) }
+        let mid = sorted.count / 2
+        let median = sorted.count % 2 == 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+        return Summary(max: Int(sorted.last!.rounded()), median: Int(median.rounded()), now: Int(last.rounded()))
+    }
+
     static func percent(_ counts: [Double]) -> [Double] {
         let t = Double(top(counts))
         return counts.map { $0 / t * 100 }
@@ -59,7 +74,7 @@ enum StatusImage {
     static let workColor = NSColor(srgbRed: 0.50, green: 0.47, blue: 0.87, alpha: 1)
     static let bigFont = NSFont.monospacedDigitSystemFont(ofSize: 14, weight: .semibold)
     static let letterFont = NSFont.systemFont(ofSize: 9, weight: .semibold)
-    static let scaleFont = NSFont.monospacedDigitSystemFont(ofSize: 6, weight: .medium)
+    static let scaleFont = NSFont.monospacedDigitSystemFont(ofSize: 6.5, weight: .semibold)
     static let workCapacity = 60  // one point per minute: the last hour
     static let cpuColor = NSColor(srgbRed: 0.52, green: 0.72, blue: 0.92, alpha: 1)
     static let memColor = NSColor(srgbRed: 0.59, green: 0.77, blue: 0.35, alpha: 1)
@@ -88,7 +103,9 @@ enum StatusImage {
     static func make(_ graphs: [StatusGraph], work: [Double]?, counts: StatusCounts?, appearance: NSAppearance) -> NSImage {
         let height = Self.height
         let machines = width(for: graphs.count)
-        let workWidth: CGFloat = work == nil ? 0 : (machines > 0 ? spacing : 0) + labelWidth + graphWidth
+        let workStats = work.map(WorkScale.summary)
+        let workWidth: CGFloat = work == nil ? 0
+            : (machines > 0 ? spacing : 0) + labelWidth + graphWidth + 1.5 + statsWidth(workStats!)
         let countsX = machines + workWidth + ((machines + workWidth) > 0 && counts != nil ? spacing : 0)
         let total = countsX + (counts.map { attentionWidth($0) } ?? 0)
         let image = NSImage(size: NSSize(width: total, height: height), flipped: false) { _ in
@@ -109,11 +126,8 @@ enum StatusImage {
                     drawLabel("work", beside: box)
                     NSColor(white: 0.16, alpha: 1).setFill()
                     NSBezierPath(roundedRect: box, xRadius: 2, yRadius: 2).fill()
-                    drawGrid(top: WorkScale.top(work), in: box)
                     fillArea(WorkScale.percent(work), in: box, color: workColor)
-                    let label = NSAttributedString(string: "\(WorkScale.top(work))", attributes: [
-                        .font: scaleFont, .foregroundColor: NSColor(white: 1, alpha: 0.75)])
-                    label.draw(at: NSPoint(x: box.minX + 1.5, y: box.maxY - label.size().height))
+                    drawStats(workStats!, at: box.maxX + 1.5, height: height)
                 }
                 if let counts {
                     var cx = countsX
@@ -134,6 +148,24 @@ enum StatusImage {
         }
         image.isTemplate = false
         return image
+    }
+
+    /// Max, median and now, stacked top to bottom beside the work graph.
+    static func statsWidth(_ summary: WorkScale.Summary) -> CGFloat {
+        [summary.max, summary.median, summary.now].map {
+            NSAttributedString(string: "\($0)", attributes: [.font: scaleFont]).size().width
+        }.max()!.rounded(.up)
+    }
+
+    private static func drawStats(_ summary: WorkScale.Summary, at x: CGFloat, height: CGFloat) {
+        let rows = [(summary.max, NSColor.secondaryLabelColor), (summary.median, NSColor.secondaryLabelColor),
+                    (summary.now, NSColor.labelColor)]
+        let rowHeight = height / 3
+        for (index, (value, color)) in rows.enumerated() {
+            let text = NSAttributedString(string: "\(value)", attributes: [.font: scaleFont, .foregroundColor: color])
+            let size = text.size()
+            text.draw(at: NSPoint(x: x, y: height - (CGFloat(index) + 0.5) * rowHeight - size.height / 2))
+        }
     }
 
     /// One faint line per session (or per few sessions on a busy hour), so the height reads as a count.

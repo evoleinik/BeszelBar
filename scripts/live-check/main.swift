@@ -50,6 +50,8 @@ expect(averaged == [LivePoint(cpu: 35, mem: 50)], "averaged \(averaged)")
 // Work graph: counts scale to at least 5 sessions, or the hour's peak.
 expect(WorkScale.percent([1, 2, 5]) == [20, 40, 100], "work scale \(WorkScale.percent([1, 2, 5]))")
 expect(WorkScale.percent([2, 10]) == [20, 100], "work scale peak")
+expect(WorkScale.summary([1, 4, 2, 5, 3]) == WorkScale.Summary(max: 5, median: 3, now: 3), "summary \(WorkScale.summary([1, 4, 2, 5, 3]))")
+expect(WorkScale.summary([]) == WorkScale.Summary(max: 0, median: 0, now: 0), "empty summary")
 expect(WorkScale.top([1, 3]) == 5 && WorkScale.top([2, 7.2]) == 8, "scale top \(WorkScale.top([2, 7.2]))")
 
 // Attention: N gets a pill only above zero; more digits take more room.
