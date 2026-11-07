@@ -233,5 +233,19 @@ expect(StatusImage.memColor(.nan) === StatusImage.memAreaColor && StatusImage.me
 expect(PixelFace.medium.length("W") == 5 && PixelFace.medium.length("I") == 3, "proportional widths")
 expect(PixelFace.medium.length("BOX") == 4 + 1 + 4 + 1 + 4, "BOX width \(PixelFace.medium.length("BOX"))")
 
+// Silent feed: a system with nothing for the limit is named, so the stream gets reopened.
+// The 2026-11-07 freeze: air went quiet after a network drop while box kept sending.
+var watch = FeedWatch(systems: ["air", "box"], limit: 30, now: 0)
+expect(watch.silent(at: 29).isEmpty, "nothing is silent before the limit")
+expect(watch.silent(at: 30) == ["air", "box"], "both silent at the limit \(watch.silent(at: 30))")
+watch.saw("box", at: 25)
+expect(watch.silent(at: 40) == ["air"], "air silent while box sends \(watch.silent(at: 40))")
+watch.saw("ghost", at: 40)
+expect(watch.silent(at: 100).contains("ghost") == false, "a system not subscribed is never tracked")
+watch.restart(at: 50)
+expect(watch.silent(at: 79).isEmpty && watch.silent(at: 80) == ["air", "box"], "a new subscription restarts every clock")
+expect(LiveMetricsService.silentLimit >= 10 && LiveMetricsService.silentLimit <= 60,
+       "silent limit \(LiveMetricsService.silentLimit) must sit well above the one-second readings")
+
 if failures == 0 { print("ok") }
 exit(failures == 0 ? 0 : 1)

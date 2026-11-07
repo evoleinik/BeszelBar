@@ -94,6 +94,43 @@ struct SSEParser {
     }
 }
 
+/// Notices a live feed that has gone quiet. Beszel sends each system about one reading a second,
+/// so a system with nothing for `limit` seconds means the stream or its subscription on the hub is
+/// stuck. On 2026-11-07 air's network dropped for a moment, and the graphs froze until a restart.
+/// Reopening the stream subscribes again, which renews the hub's side too.
+struct FeedWatch {
+    let limit: Double
+    private var lastSeen: [String: Double] = [:]
+
+    init(systems: [String], limit: Double, now: Double) {
+        self.limit = limit
+        for id in systems { lastSeen[id] = now }
+    }
+
+    mutating func saw(_ systemID: String, at time: Double) {
+        if lastSeen[systemID] != nil { lastSeen[systemID] = time }
+    }
+
+    /// Starts every system's clock again, for a new subscription.
+    mutating func restart(at time: Double) {
+        for id in lastSeen.keys { lastSeen[id] = time }
+    }
+
+    /// The systems that have sent nothing for `limit` seconds.
+    func silent(at time: Double) -> [String] {
+        lastSeen.filter { time - $0.value >= limit }.keys.sorted()
+    }
+}
+
+/// Lets the stream reader and its watchdog share one FeedWatch.
+private actor FeedClock {
+    private var watch: FeedWatch
+    init(_ watch: FeedWatch) { self.watch = watch }
+    func saw(_ systemID: String) { watch.saw(systemID, at: Date().timeIntervalSince1970) }
+    func restart() { watch.restart(at: Date().timeIntervalSince1970) }
+    func silent() -> [String] { watch.silent(at: Date().timeIntervalSince1970) }
+}
+
 enum RealtimeTopic {
     /// The topic Beszel's web UI subscribes to for one system's one-second metrics. PocketBase reads
     /// `options` as a URL query parameter holding JSON.
@@ -128,6 +165,9 @@ final class LiveMetricsService {
 
     private var task: Task<Void, Never>?
     private var configKey = ""
+
+    /// A system silent this long gets the stream reopened. Readings come about once a second.
+    nonisolated static let silentLimit = 30.0
 
     private nonisolated static let session: URLSession = {
         let config = URLSessionConfiguration.default
@@ -206,8 +246,35 @@ final class LiveMetricsService {
         onUpdate?()
     }
 
-    private nonisolated static func stream(baseURL: String, systemIDs: [String], token: TokenProvider, refresh: Bool,
+    /// Reads the stream until it ends, fails, or a system goes silent for `silentLimit` seconds.
+    /// The caller then waits five seconds and opens a new stream.
+    private nonisolated static func stream(baseURL: String, systemIDs: [String], token: @escaping TokenProvider, refresh: Bool,
                                            deliver: @escaping @Sendable (String, LivePoint) async -> Void) async throws {
+        let clock = FeedClock(FeedWatch(systems: systemIDs, limit: silentLimit, now: Date().timeIntervalSince1970))
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+                try await read(baseURL: baseURL, systemIDs: systemIDs, token: token, refresh: refresh,
+                               clock: clock, deliver: deliver)
+            }
+            group.addTask {
+                while true {
+                    try await Task.sleep(nanoseconds: 5_000_000_000)
+                    let silent = await clock.silent()
+                    if !silent.isEmpty {
+                        NSLog("BeszelBar: no live data from %@ for %.0f s, reopening the stream",
+                              silent.joined(separator: ", "), silentLimit)
+                        throw URLError(.timedOut)
+                    }
+                }
+            }
+            // Whichever finishes first ends this stream. Leaving the group cancels the other.
+            _ = try await group.next()
+            group.cancelAll()
+        }
+    }
+
+    private nonisolated static func read(baseURL: String, systemIDs: [String], token: TokenProvider, refresh: Bool,
+                                         clock: FeedClock, deliver: @escaping @Sendable (String, LivePoint) async -> Void) async throws {
         guard let url = URL(string: baseURL + "/api/realtime") else { throw URLError(.badURL) }
         var request = URLRequest(url: url)
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
@@ -226,7 +293,9 @@ final class LiveMetricsService {
                 if event.name == "PB_CONNECT" {
                     try await subscribe(baseURL: baseURL, event: event, topics: Array(topics.keys),
                                         token: try await token(refresh))
+                    await clock.restart()
                 } else if let systemID = topics[event.name], let point = LivePoint.decode(event.data) {
+                    await clock.saw(systemID)
                     await deliver(systemID, point)
                 }
             } else if byte != 0x0D {
