@@ -107,9 +107,10 @@ final class AppState {
         alertTask = Task {
             do {
                 let service = getOrCreateService(for: instance)
-                let alerts = try await service.fetchAlerts(filter: "enabled = true")
+                // Beszel alerts have no on/off field: a rule exists or it does not.
+                let alerts = try await service.fetchAlerts(filter: "triggered = true")
                 guard !Task.isCancelled else { return }
-                activeAlerts = alerts.filter { $0.triggered == true }
+                activeAlerts = alerts
             } catch is CancellationError {
                 return
             } catch {
