@@ -247,5 +247,24 @@ expect(watch.silent(at: 79).isEmpty && watch.silent(at: 80) == ["air", "box"], "
 expect(LiveMetricsService.silentLimit >= 10 && LiveMetricsService.silentLimit <= 60,
        "silent limit \(LiveMetricsService.silentLimit) must sit well above the one-second readings")
 
+// The 2026-11-12 freeze: the hub's 5-day token expired, the hub answered list calls with an
+// empty list instead of 401, and the app kept the dead token. It must renew before expiry.
+func jwt(_ claims: String) -> String {
+    let body = Data(claims.utf8).base64EncodedString()
+        .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
+        .replacingOccurrences(of: "=", with: "")
+    return "eyJhbGciOiJIUzI1NiJ9.\(body).sig"
+}
+let now = Date(timeIntervalSince1970: 1_800_000_000)
+let fiveDays = jwt(#"{"exp":1800432000,"id":"u1","type":"auth"}"#)
+expect(TokenExpiry.expiry(of: fiveDays) == Date(timeIntervalSince1970: 1_800_432_000), "exp read from payload")
+expect(!TokenExpiry.needsRenewal(fiveDays, now: now), "a fresh token is kept")
+expect(TokenExpiry.needsRenewal(fiveDays, now: now.addingTimeInterval(432_000 - 600)), "renewed 10 minutes before expiry")
+expect(TokenExpiry.needsRenewal(fiveDays, now: now.addingTimeInterval(432_000 + 1)), "an expired token is renewed")
+expect(!TokenExpiry.needsRenewal("not-a-jwt", now: now), "a token without exp is kept")
+// base64url payloads need padding back, and may carry - and _.
+let padded = jwt(#"{"exp":1800000000,"x":"??>>"}"#)
+expect(TokenExpiry.expiry(of: padded) == now, "base64url payload with padding \(padded)")
+
 if failures == 0 { print("ok") }
 exit(failures == 0 ? 0 : 1)
